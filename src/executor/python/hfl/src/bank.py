@@ -52,7 +52,7 @@ def normalize(X_train, X_test):
 
 
 def split(num):
-    filepath = "../data/bank/bank-additional-full.csv"
+    filepath = "../../data/bank/bank-additional-full.csv"
     df = pd.read_csv(filepath, sep=';')
     df['y'] = (df['y'] == 'yes').astype(int)
     data = encode(df)
