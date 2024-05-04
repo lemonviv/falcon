@@ -8,10 +8,10 @@ from .utils import parseargs, get_dataset
 import numpy as np
 
 import copy
-import torch
 from tqdm import tqdm
 
-from . import bank, utils
+from . import utils
+from src.executor.python.hfl.src.dataset import bank
 from .models import MLP_Bank, CNNMnist
 
 from .update import LocalUpdate, test_inference
@@ -162,13 +162,13 @@ def run(
     device = 'cuda' if args.gpu else 'cpu'
 
     # load dataset and user groups
-    train_dataset, test_dataset, user_groups = get_dataset(args)
+    train_dataset, test_dataset = get_dataset(args.data, args.data_dir, client_id=client.global_rank)
 
     # BUILD MODEL
     if args.model == 'cnn':
         # Convolutional neural netork
         if args.data == 'mnist':
-            global_model = CNNMnist(args=args)
+            global_model = CNNMnist(num_channels=args.num_channels, num_classes=args.num_classes)
 
     elif args.model == 'mlp':
         # Multi-layer preceptron
@@ -176,8 +176,7 @@ def run(
         len_in = 1
         for x in img_size:
             len_in *= x
-            global_model = MLP_Bank(dim_in=len_in, dim_hidden=64,
-                               dim_out=args.num_classes)
+            global_model = MLP_Bank(dim_in=len_in, dim_hidden=64, dim_out=args.num_classes)
     else:
         exit('Error: unrecognized model')
 
@@ -202,29 +201,22 @@ def run(
         print(f'\n | Global Training Round : {epoch+1} |\n')
 
         if epoch > 0:
+            print(f"client begins to pull weights from server")
             client.pull()
+            print(f"client finishes pulling weights from server")
 
-        m = args.num_clients
-        idxs_users = np.random.choice(range(args.num_clients), m, replace=False)
+        global_model.load_state_dict(client.weights)
 
-
-        for idx in idxs_users:
-            if idx == client.global_rank:
-                # update global weights
-                global_model.load_state_dict(client.weights)
-
-                local_model = LocalUpdate(args=args, dataset=train_dataset,
-                                          idxs=user_groups[idx])
-                w, loss = local_model.update_weights(
-                    model=copy.deepcopy(global_model), global_round=epoch)
-                # local_weights.append(copy.deepcopy(w))
-                # local_losses.append(copy.deepcopy(loss))
+        local_model = LocalUpdate(args=args, dataset=train_dataset)
+        w, loss = local_model.update_weights(
+                model=copy.deepcopy(global_model), global_round=epoch)
 
         client.weights = copy.deepcopy(w)
         print(f'Local training loss : {loss}')
         client.push()
+        print(f"client pushed weights to server")
 
-        # Test inference after completion of training
+    # Test inference after completion of training
     test_acc, test_loss = test_inference(args, global_model, test_dataset)
 
     print(f' \n Results after {args.max_epoch} global rounds of training:')

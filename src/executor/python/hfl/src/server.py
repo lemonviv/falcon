@@ -10,6 +10,7 @@ import torch
 from .proto import interface_pb2 as proto
 from .utils import parseargs, receive_int, receive_all, receive_message, send_message, send_int, serialize_tensor, deserialize_tensor, get_dataset
 
+
 class Server:
     """Server sends and receives protobuf messages.
 
@@ -143,9 +144,13 @@ if __name__ == "__main__":
         print(f"On epoch {i}:")
         if i > 0:
             # Push to Clients
+            print(f"Server push weights to clients start")
             server.push()
+            print(f"Server push weights to clients done")
 
         # Collects from Clients
+        print(f"Server pull weights from clients start")
         server.pull()
+        print(f"Server pull weights from clients done")
 
     server.close()

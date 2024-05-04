@@ -1,6 +1,6 @@
 import torch
 from torch import nn
-from torch.utils.data import DataLoader, Dataset
+from torch.utils.data import DataLoader, Dataset, random_split
 
 
 class DatasetSplit(Dataset):
@@ -20,30 +20,32 @@ class DatasetSplit(Dataset):
 
 
 class LocalUpdate(object):
-    def __init__(self, args, dataset, idxs):
+    def __init__(self, args, dataset):
         self.args = args
-        self.trainloader, self.validloader, self.testloader = self.train_val_test(
-            dataset, list(idxs))
+        self.trainloader, self.validloader, self.testloader = self.train_val_test(dataset)
         self.device = 'cuda' if args.gpu else 'cpu'
         # Default criterion set to NLL loss function
         self.criterion = nn.NLLLoss().to(self.device)
 
-    def train_val_test(self, dataset, idxs):
+    def train_val_test(self, dataset):
         """
         Returns train, validation and test dataloaders for a given dataset
         and user indexes.
         """
-        # split indexes for train, validation, and test (80, 10, 10)
-        idxs_train = idxs[:int(0.8*len(idxs))]
-        idxs_val = idxs[int(0.8*len(idxs)):int(0.9*len(idxs))]
-        idxs_test = idxs[int(0.9*len(idxs)):]
 
-        trainloader = DataLoader(DatasetSplit(dataset, idxs_train),
-                                 batch_size=self.args.local_bs, shuffle=True)
-        validloader = DataLoader(DatasetSplit(dataset, idxs_val),
-                                 batch_size=int(len(idxs_val)/10), shuffle=False)
-        testloader = DataLoader(DatasetSplit(dataset, idxs_test),
-                                batch_size=int(len(idxs_test)/10), shuffle=False)
+        # Define the sizes for train, validation, and test sets
+        train_size = int(0.8 * len(dataset))  # 80% of the dataset for training
+        val_size = int(0.1 * len(dataset))    # 10% of the dataset for validation
+        test_size = len(dataset) - train_size - val_size  # Remaining 10% for testing
+
+        # Split the dataset into train, validation, and test sets
+        train_dataset, val_dataset, test_dataset = random_split(dataset, [train_size, val_size, test_size])
+
+        # Define data loaders for train, validation, and test sets
+        trainloader = DataLoader(train_dataset, batch_size=self.args.local_bs, shuffle=True)
+        validloader = DataLoader(val_dataset, batch_size=self.args.local_bs, shuffle=False)
+        testloader = DataLoader(test_dataset, batch_size=self.args.local_bs, shuffle=False)
+
         return trainloader, validloader, testloader
 
     def update_weights(self, model, global_round):

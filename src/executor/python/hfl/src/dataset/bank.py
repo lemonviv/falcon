@@ -4,9 +4,18 @@
 import pandas as pd
 import numpy as np
 import sys
+import argparse
 from pandas.api.types import is_numeric_dtype
 from sklearn.model_selection import train_test_split
 from sklearn.utils import shuffle
+
+
+def get_args():
+    parser = argparse.ArgumentParser(description='split the bank dataset and normalize')
+    parser.add_argument('--input_file', type=str, help='the input file')
+    parser.add_argument('--output_path', type=str, help='the output file path')
+    parser.add_argument('--num_clients', type=int, help='the number of clients to be split')
+    return parser.parse_args()
 
 
 def encode(df):
@@ -20,9 +29,9 @@ def encode(df):
     return res
 
 
-def load(device_id):
-    fn_train = "../data/bank_train_" + str(device_id) + ".csv"
-    fn_test = "../data/bank_test_" + str(device_id) + ".csv"
+def load(device_id, file_path):
+    fn_train = file_path + "/bank_train_" + str(device_id) + ".csv"
+    fn_test = file_path + "/bank_test_" + str(device_id) + ".csv"
 
     train = pd.read_csv(fn_train, sep=',')
     test = pd.read_csv(fn_test, sep=',')
@@ -51,17 +60,18 @@ def normalize(X_train, X_test):
     return X_train_scaled, X_test_scaled
 
 
-def split(num):
-    filepath = "../../data/bank/bank-additional-full.csv"
+def split(args):
+    filepath = args.input_file
     df = pd.read_csv(filepath, sep=';')
     df['y'] = (df['y'] == 'yes').astype(int)
     data = encode(df)
     data = shuffle(data)
     train, test = train_test_split(data, test_size=0.2)
 
-    train.to_csv("../data/bank_train_.csv", index=False)
-    test.to_csv("../data/bank_test_.csv", index=False)
+    train.to_csv(args.output_path + "/bank_train_.csv", index=False)
+    test.to_csv(args.output_path + "/bank_test_.csv", index=False)
 
+    num = args.num_clients
     train_per_client = len(train) // num
     test_per_client = len(test) // num
 
@@ -70,10 +80,11 @@ def split(num):
     for i in range(num):
         sub_train = train[i * train_per_client:(i + 1) * train_per_client]
         sub_test = test[i * test_per_client:(i + 1) * test_per_client]
-        sub_train.to_csv("../data/bank_train_" + str(i) + ".csv", index=False)
-        sub_test.to_csv("../data/bank_test_" + str(i) + ".csv", index=False)
+        sub_train.to_csv(args.output_path + "/bank_train_" + str(i) + ".csv", index=False)
+        sub_test.to_csv(args.output_path + "/bank_test_" + str(i) + ".csv", index=False)
 
 
 if __name__ == "__main__":
-    split(int(sys.argv[1]))
+    args = get_args()
+    split(args=args)
 

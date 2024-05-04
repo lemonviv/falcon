@@ -10,6 +10,10 @@ from torch import tensor
 from .sampling import mnist_iid, mnist_noniid, mnist_noniid_unequal
 from .sampling import cifar_iid, cifar_noniid
 from torchvision import datasets, transforms
+from torch.utils.data import Dataset, DataLoader
+import pandas as pd
+from sklearn.preprocessing import MinMaxScaler
+
 
 def receive_all(conn: socket.socket, size: int) -> bytes:
     """Receive a given length of bytes from socket.
@@ -115,40 +119,50 @@ def deserialize_tensor(t: bytes) -> torch.tensor:
     return torch.from_numpy(pickle.loads(t))
 
 
-def get_dataset(args):
-    """ Returns train and test datasets.
+class CustomDataset(Dataset):
+    def __init__(self, file_path, transform=None):
+        self.data = pd.read_csv(file_path)
+        self.transform = transform
+
+    def __len__(self):
+        return len(self.data)
+
+    def __getitem__(self, idx):
+        sample = self.data.iloc[idx, :].values
+        if self.transform:
+            sample = self.transform(sample)
+        return sample
+
+
+class MinMaxScaleTransform:
+    def __init__(self):
+        self.scaler = MinMaxScaler()
+
+    def __call__(self, sample):
+        # sample is assumed to be a NumPy array or a PyTorch tensor
+        if isinstance(sample, torch.Tensor):
+            sample = sample.numpy()  # Convert tensor to NumPy array
+        scaled_sample = self.scaler.fit_transform(sample)
+        return torch.from_numpy(scaled_sample)  # Convert NumPy array back to tensor
+
+
+def get_dataset(data, data_dir, client_id):
+    """
+    Returns train and test datasets.
     """
 
-    if args.data == 'cifar':
-        data_dir = '../data/cifar/'
-        apply_transform = transforms.Compose(
-            [transforms.ToTensor(),
-             transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5))])
+    if data == 'bank':
+        apply_transform = MinMaxScaleTransform()
+        train_dataset = CustomDataset(data_dir + "/bank_train_" + str(client_id) + ".csv",
+                                      transform=apply_transform)
+        test_dataset = CustomDataset(data_dir + "/bank_test_" + str(client_id) + ".csv",
+                                      transform=apply_transform)
 
-        train_dataset = datasets.CIFAR10(data_dir, train=True, download=True,
-                                         transform=apply_transform)
-
-        test_dataset = datasets.CIFAR10(data_dir, train=False, download=True,
-                                        transform=apply_transform)
-
-        # sample training data amongst users
-        if args.data_dist == 'iid':
-            # Sample IID user data from Mnist
-            user_groups = cifar_iid(train_dataset, args.num_clients)
-        else:
-            # Sample Non-IID user data from Mnist
-            if args.unequal:
-                # Chose uneuqal splits for every user
-                raise NotImplementedError()
-            else:
-                # Chose euqal splits for every user
-                user_groups = cifar_noniid(train_dataset, args.num_clients)
-
-    elif args.data == 'mnist' or 'fmnist':
-        if args.data == 'mnist':
-            data_dir = '../data/mnist/'
-        else:
-            data_dir = '../data/fmnist/'
+    elif data == 'mnist' or 'fmnist':
+        # if data == 'mnist':
+        #    data_dir = '../data/mnist/'
+        # else:
+        #    data_dir = '../data/fmnist/'
 
         apply_transform = transforms.Compose([
             transforms.ToTensor(),
@@ -160,20 +174,8 @@ def get_dataset(args):
         test_dataset = datasets.MNIST(data_dir, train=False, download=True,
                                       transform=apply_transform)
 
-        # sample training data amongst users
-        if args.data_dist == 'iid':
-            # Sample IID user data from Mnist
-            user_groups = mnist_iid(train_dataset, args.num_clients)
-        else:
-            # Sample Non-IID user data from Mnist
-            if args.unequal:
-                # Chose uneuqal splits for every user
-                user_groups = mnist_noniid_unequal(train_dataset, args.num_clients)
-            else:
-                # Chose euqal splits for every user
-                user_groups = mnist_noniid(train_dataset, args.num_clients)
+    return train_dataset, test_dataset
 
-    return train_dataset, test_dataset, user_groups
 
 def parseargs(arg=None) -> argparse.Namespace:
     """Parse command line arguments
