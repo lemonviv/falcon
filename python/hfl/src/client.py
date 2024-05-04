@@ -188,6 +188,7 @@ def run(
 
     # copy weights
     global_weights = global_model.state_dict()
+    client.weights = global_weights
 
     # Training
     train_loss, train_accuracy = [], []
@@ -209,14 +210,17 @@ def run(
 
         for idx in idxs_users:
             if idx == client.global_rank:
+                # update global weights
+                global_model.load_state_dict(client.weights)
+
                 local_model = LocalUpdate(args=args, dataset=train_dataset,
                                           idxs=user_groups[idx])
                 w, loss = local_model.update_weights(
-                    model=copy.deepcopy(client.weights), global_round=epoch)
+                    model=copy.deepcopy(global_model), global_round=epoch)
                 # local_weights.append(copy.deepcopy(w))
                 # local_losses.append(copy.deepcopy(loss))
 
-        client.weights = w
+        client.weights = copy.deepcopy(w)
         print(f'Local training loss : {loss}')
         client.push()
 
