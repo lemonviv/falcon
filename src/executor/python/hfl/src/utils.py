@@ -13,6 +13,7 @@ from torchvision import datasets, transforms
 from torch.utils.data import Dataset, DataLoader
 import pandas as pd
 from sklearn.preprocessing import MinMaxScaler
+import numpy as np
 
 
 def receive_all(conn: socket.socket, size: int) -> bytes:
@@ -122,16 +123,26 @@ def deserialize_tensor(t: bytes) -> torch.tensor:
 class CustomDataset(Dataset):
     def __init__(self, file_path, transform=None):
         self.data = pd.read_csv(file_path)
+        print("self.data shape:", self.data.shape)
         self.transform = transform
 
     def __len__(self):
         return len(self.data)
 
     def __getitem__(self, idx):
-        sample = self.data.iloc[idx, :].values
+        label = self.data.iloc[idx, -1]
+        # print(f"label: {label}")
+        # print(f"type of label: {type(label)}")
+        sample = self.data.iloc[idx, :-1].values
+        # print(f"sample before transform: {sample}")
+        # print(f"type of sample: {type(sample)}")
+        sample_float = sample.astype(np.float32)
+        # print(f"sample_float before transform: {sample_float}")
+        # print(f"type of sample_float: {type(sample_float)}")
         if self.transform:
-            sample = self.transform(sample)
-        return sample
+            sample_float = sample_float.reshape(1, -1)
+            sample_float = self.transform(sample_float)
+        return (sample_float, label)
 
 
 class MinMaxScaleTransform:
@@ -153,6 +164,8 @@ def get_dataset(data, data_dir, client_id):
 
     if data == 'bank':
         apply_transform = MinMaxScaleTransform()
+        # apply_transform = transforms.Compose([
+        #    transforms.ToTensor(), MinMaxScaleTransform()])
         train_dataset = CustomDataset(data_dir + "/bank_train_" + str(client_id) + ".csv",
                                       transform=apply_transform)
         test_dataset = CustomDataset(data_dir + "/bank_test_" + str(client_id) + ".csv",
@@ -231,11 +244,12 @@ def parseargs(arg=None) -> argparse.Namespace:
                             to a specific GPU ID. Default set to use CPU.")
     parser.add_argument('--optimizer', type=str, default='sgd', help="type \
                             of optimizer")
+    parser.add_argument('--data_dir', type=str, help="the data folder", dest="data_dir")
     parser.add_argument('--iid', type=int, default=1,
                         help='Default set to IID. Set to 0 for non-IID.')
-    parser.add_argument('--local_ep', type=int, default=10,
+    parser.add_argument('--local_ep', type=int, default=1,
                         help="the number of local epochs: E")
-    parser.add_argument('--local_bs', type=int, default=10,
+    parser.add_argument('--local_bs', type=int, default=32,
                         help="local batch size: B")
     parser.add_argument("--num_clients", default=10, type=int)
     parser.add_argument("--host", default="127.0.0.1")

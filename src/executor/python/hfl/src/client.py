@@ -11,7 +11,7 @@ import copy
 from tqdm import tqdm
 
 from . import utils
-from src.executor.python.hfl.src.dataset import bank
+from .dataset import bank
 from .models import MLP_Bank, CNNMnist
 
 from .update import LocalUpdate, test_inference
@@ -149,7 +149,6 @@ def run(
         model,
         data,
         data_dist,
-        graph,
         verbosity,
         spars=None
 ):
@@ -191,10 +190,6 @@ def run(
 
     # Training
     train_loss, train_accuracy = [], []
-    val_acc_list, net_list = [], []
-    cv_loss, cv_acc = [], []
-    print_every = 2
-    val_loss_pre, counter = 0, 0
 
     for epoch in tqdm(range(args.max_epoch)):
         # local_weights, local_losses = [], []
@@ -207,22 +202,33 @@ def run(
 
         global_model.load_state_dict(client.weights)
 
+        print(f"client start local update...")
         local_model = LocalUpdate(args=args, dataset=train_dataset)
         w, loss = local_model.update_weights(
                 model=copy.deepcopy(global_model), global_round=epoch)
+        print(f"client finish local update...")
 
         client.weights = copy.deepcopy(w)
         print(f'Local training loss : {loss}')
         client.push()
         print(f"client pushed weights to server")
 
+        local_model = LocalUpdate(args=args, dataset=train_dataset)
+        acc, loss = local_model.inference(model=global_model)
+        train_accuracy.append(acc)
+        train_loss.append(loss)
+        print("|---- Train Accuracy: {:.2f}%".format(100*acc))
+        print("|---- Train Loss: {:.2f}".format(loss))
+
+    print(f"Train Accuracy: {train_accuracy}")
+    print(f"Train Loss: {train_loss}")
+
     # Test inference after completion of training
     test_acc, test_loss = test_inference(args, global_model, test_dataset)
 
     print(f' \n Results after {args.max_epoch} global rounds of training:')
-    print("|---- Avg Train Accuracy: {:.2f}%".format(100*train_accuracy[-1]))
     print("|---- Test Accuracy: {:.2f}%".format(100*test_acc))
-
+    print("|---- Test Loss: {:.2f}".format(test_loss))
 
     client.close()
 
@@ -241,6 +247,5 @@ if __name__ == "__main__":
         args.model,
         args.data,
         args.data_dist,
-        args.graph,
         args.verbosity
     )

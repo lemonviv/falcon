@@ -62,8 +62,11 @@ class LocalUpdate(object):
                                          weight_decay=1e-4)
 
         for iter in range(self.args.local_ep):
+            print(f"local iter: {iter}\n")
             batch_loss = []
+            # i = 0
             for batch_idx, (images, labels) in enumerate(self.trainloader):
+                # print(f"i: {i}\n")
                 images, labels = images.to(self.device), labels.to(self.device)
 
                 model.zero_grad()
@@ -79,6 +82,7 @@ class LocalUpdate(object):
                                             100. * batch_idx / len(self.trainloader), loss.item()))
                 # self.logger.add_scalar('loss', loss.item())
                 batch_loss.append(loss.item())
+                # i = i + 1
             epoch_loss.append(sum(batch_loss)/len(batch_loss))
 
         return model.state_dict(), sum(epoch_loss) / len(epoch_loss)
