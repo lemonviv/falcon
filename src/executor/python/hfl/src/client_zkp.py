@@ -17,6 +17,7 @@ from .models import MLP_Bank, CNNMnist
 
 from .update import LocalUpdate, test_inference
 
+import risefl_interface
 
 class Client:
     """Client sends and receives protobuf messages.
@@ -52,6 +53,8 @@ class Client:
 
         self.weights = {}
 
+        # TODO: add zkp client object
+
     def __start_connection(self) -> None:
         """Start the network connection to server."""
         self.sock.connect((self.host, self.port))
@@ -60,6 +63,10 @@ class Client:
         """Sending global rank to server"""
         utils.send_int(self.sock, self.global_rank)
 
+    def __init_zkp_client(self) -> None:
+        """Initialize zkp params etc."""
+        # TODO: add zkp client initialization
+
     def start(self) -> None:
         """Start the client.
 
@@ -67,6 +74,7 @@ class Client:
         """
         self.__start_connection()
         self.__start_rank_pairing()
+        self.__init_zkp_client()
 
         print(f"[Client {self.global_rank}] Connect to {self.host}:{self.port}")
 
@@ -167,8 +175,27 @@ def run(
 
         client.weights = copy.deepcopy(w)
         print(f'Local training loss : {loss}')
-        client.push()
-        print(f"client pushed weights to server")
+
+        # TODO: step 1 client sends message to the server
+
+        # TODO: step 2.1 receive message from the server
+
+        # TODO: step 2.2 client sends message back to the server
+
+        # TODO: step 3.1 receive message from the server
+
+        # TODO: step 3.2 client sends message back to the server
+
+        # TODO: step 4.1 receive message from the server
+
+        # TODO: step 4.2 client sends message back to the server
+
+        # TODO: step 5.1 receive message from the server
+
+        # TODO: step 5.2 client sends message back to the server
+
+        # client.push()
+        # print(f"client pushed weights to server")
 
         local_model = LocalUpdate(args=args, dataset=train_dataset)
         acc, loss = local_model.inference(model=global_model)
