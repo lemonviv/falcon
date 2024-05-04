@@ -3,7 +3,8 @@
 import socket
 
 from .proto import interface_pb2 as proto
-from .utils import parseargs, get_dataset
+from .utils import parseargs
+from .dataset.data_loader import get_dataset
 
 import numpy as np
 

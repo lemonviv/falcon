@@ -8,7 +8,7 @@ from typing import Dict, List
 import torch
 
 from .proto import interface_pb2 as proto
-from .utils import parseargs, receive_int, receive_all, receive_message, send_message, send_int, serialize_tensor, deserialize_tensor, get_dataset
+from .utils import parseargs, receive_int, receive_all, receive_message, send_message, send_int, serialize_tensor, deserialize_tensor
 
 
 class Server:
