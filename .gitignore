@@ -153,3 +153,5 @@ src/falcon_platform/examples/train_job_dsls/sigmod_experiments/
 data/dataset/breast_cancer_data/client0/log_reg/
 data/dataset/breast_cancer_data/client1/log_reg/
 data/dataset/breast_cancer_data/client2/log_reg/
+
+python/data/
