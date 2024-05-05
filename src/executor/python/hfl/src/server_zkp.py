@@ -186,25 +186,57 @@ if __name__ == "__main__":
         # print(f"Server pull weights from clients done")
 
         # TODO: step 1 receive messages from all clients
+        for i in range(args.num_clients):
+            # receive messages from each client
+            client_i_str = ""
+            server.zkp_server.receive_1(client_i_str, i)
 
         # TODO: step 2.1 send messages to all clients
+        bytes_sent_2 = server.zkp_server.send_2()
+        for i in range(args.num_clients):
+            # broadcast the message
+            server.pull()
 
         # TODO: step 2.2 receive messages from all clients
+        for i in range(args.num_clients):
+            # receive the message from the client
+            client_i_str = ""
+            server.zkp_server.receive_2(client_i_str, i)
 
-        # TODO: step 3.1 send messages to all clients
+        # TODO: step 3 send messages to all clients and receive messages
+        server.zkp_server.concurrent_process_before_send_3()
+        for i in range(args.num_clients):
+            server_send_3_str = server.zkp_server.send_3(i)
+            # send the string to client i
+            # to add
+            # receive str from client i
+            client_i_str = ""
+            server.zkp_server.receive_3(client_i_str, i)
 
-        # TODO: step 3.2 receive messages from all clients
+        # TODO: step 4 send messages to all clients and receive
+        server.zkp_server.process_before_send_4()
+        for i in range(args.num_clients):
+            server_send_4_str = server.zkp_server.send_4(i)
+            # send string to client i
+            # receive string from client i
+            client_i_str = ""
+            server.zkp_server.receive_4(client_i_str, i)
 
-        # TODO: step 4.1 send messages to all clients
-
-        # TODO: step 4.2 receive messages from all clients
-
-        # TODO: step 5.1 send messages to all clients
-
-        # TODO: step 5.2 receive messages from all clients
+        # TODO: step 5 send messages to all clients and receive
+        server.process_before_send_5()
+        for i in range(args.num_clients):
+            server_send_5_str = server.zkp_server.send_5(i)
+            # send string to client i
+            # receive string from client i
+            client_i_str = ""
+            server.zkp_server.receive_5(client_i_str, i)
 
         # TODO: finish one iteration
+        server.zkp_server.finish_iteration()
 
         # TODO: broadcast weights
+        for i in range(args.num_clients):
+            # broadcast the updated weights to clients
+            server.push()
 
     server.close()
