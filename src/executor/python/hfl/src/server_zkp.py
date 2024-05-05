@@ -9,8 +9,10 @@ import torch
 import risefl_interface
 
 from .proto import interface_pb2 as proto
-from .utils import parseargs, receive_int, receive_all, receive_message, send_message, send_int, serialize_tensor, deserialize_tensor
+from .utils import parseargs, receive_int, receive_all, receive_message, send_message, send_int, serialize_tensor, deserialize_tensor, check_defense_type
 
+import os
+import base64
 
 class Server:
     """Server sends and receives protobuf messages.
@@ -51,6 +53,7 @@ class Server:
         self.weights = {}
 
         # TODO: add zkp server object
+        self.zkp_server = None
 
     def __start_connection(self) -> None:
         """Start the network connection of server."""
@@ -69,9 +72,31 @@ class Server:
 
         assert None not in self.conns
 
-    def __init_server_zkp(self) -> None:
+    def init_server_zkp(self, args) -> None:
         """Initialize server zkp"""
-        # TODO: add server zkp initialization
+        defense_type = check_defense_type(args.defense_desc)
+
+        # TODO: need to broadcast check_param to all clients
+        # initialize the check parameter
+        check_param = risefl_interface.CheckParamFloat(defense_type)
+        check_param.l2_param.bound = args.norm_bound
+
+        # TODO: need to broadcast random_bytes_str to all clients
+        # a random string used to generate independent group elements, to be used by both the server and clients
+        random_bytes = os.urandom(64)
+        random_bytes_str = base64.b64encode(random_bytes).decode('ascii')
+        print("random_bytes_str = " + random_bytes_str)
+
+        # initialize server
+        self.zkp_server = risefl_interface.ServerInterface(
+            args.num_clients, args.max_malicious_clients, args.dim,
+            args.num_blinds_per_group_element, args.weight_bits, args.random_normal_bit_shifter,
+            args.num_norm_bound_samples, args.inner_prod_bound_bits, args.max_bound_sq_bits,
+            defense_type, False)
+
+        self.zkp_server.initialize_from_seed(random_bytes_str)
+        # add the following to the iterations
+        # self.zkp_server .initialize_new_iteration(check_param)
 
     def start(self) -> None:
         """Start the server.

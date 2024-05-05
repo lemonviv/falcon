@@ -7,6 +7,8 @@ import struct
 import torch
 from google.protobuf.message import Message
 
+import risefl_interface
+
 
 def receive_all(conn: socket.socket, size: int) -> bytes:
     """Receive a given length of bytes from socket.
@@ -110,6 +112,19 @@ def deserialize_tensor(t: bytes) -> torch.tensor:
         torch.tensor: The torch tensor.
     """
     return torch.from_numpy(pickle.loads(t))
+
+
+def check_defense_type(defense_desc) -> int:
+    defense_type = 0
+    if defense_desc == "l2norm":
+        defense_type = risefl_interface.CHECK_TYPE_L2NORM
+    elif defense_desc == "sphere":
+        defense_type = risefl_interface.CHECK_TYPE_SPHERE
+    elif defense_desc == "cosine":
+        defense_type = risefl_interface.CHECK_TYPE_COSINE_SIM
+    else:
+        raise ValueError("Unsupported defense type!")
+    return defense_type
 
 
 def parseargs(arg=None) -> argparse.Namespace:

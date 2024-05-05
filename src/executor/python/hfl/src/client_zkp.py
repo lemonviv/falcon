@@ -3,12 +3,13 @@
 import socket
 
 from .proto import interface_pb2 as proto
-from .utils import parseargs
+from .utils import parseargs, check_defense_type
 from .dataset.data_loader import get_dataset
 
 import numpy as np
-
 import copy
+import os
+import base64
 from tqdm import tqdm
 
 from . import utils
@@ -54,6 +55,7 @@ class Client:
         self.weights = {}
 
         # TODO: add zkp client object
+        self.zkp_client = None
 
     def __start_connection(self) -> None:
         """Start the network connection to server."""
@@ -63,9 +65,29 @@ class Client:
         """Sending global rank to server"""
         utils.send_int(self.sock, self.global_rank)
 
-    def __init_zkp_client(self) -> None:
+    def init_zkp_client(self, args) -> None:
         """Initialize zkp params etc."""
-        # TODO: add zkp client initialization
+        defense_type = check_defense_type(args.defense_desc)
+
+        # TODO: need to update the generation of the pub and priv keys
+        sign_pub_keys_vec = risefl_interface.VecSignPubKeys(args.num_clients + 1)
+        sign_prv_keys_vec = risefl_interface.VecSignPrvKeys(args.num_clients + 1)
+
+        self.zkp_client = risefl_interface.ClientInterface(
+            args.num_clients, args.max_malicious_clients, args.dim,
+            args.num_blinds_per_group_element, args.weight_bits, args.random_normal_bit_shifter,
+            args.num_norm_bound_samples, args.inner_prod_bound_bits, args.max_bound_sq_bits,
+            defense_type, self.global_rank,
+            sign_pub_keys_vec, sign_prv_keys_vec[self.global_rank + 1])
+
+        # TODO: need to receive check_param from the server
+
+        # TODO: need to receive the random_bytes_str from the server
+        random_bytes = os.urandom(64)
+        random_bytes_str = base64.b64encode(random_bytes).decode('ascii')
+        print("random_bytes_str = " + random_bytes_str)
+
+        self.zkp_client.initialize_from_seed(random_bytes_str)
 
     def start(self) -> None:
         """Start the client.
@@ -74,7 +96,6 @@ class Client:
         """
         self.__start_connection()
         self.__start_rank_pairing()
-        self.__init_zkp_client()
 
         print(f"[Client {self.global_rank}] Connect to {self.host}:{self.port}")
 
