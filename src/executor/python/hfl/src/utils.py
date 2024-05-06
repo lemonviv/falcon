@@ -191,6 +191,27 @@ def parseargs(arg=None) -> argparse.Namespace:
     parser.add_argument("--num_clients", default=10, type=int)
     parser.add_argument("--host", default="127.0.0.1")
     parser.add_argument("--port", default=1234)
-    
+
+    # parameters required by the zkp library
+    parser.add_argument("--max_malicious_clients", default=2, type=int, help="maximum number of malicious clients")
+    parser.add_argument("--num_blinds_per_group_element", default=1, type=int, help="number of blinds per group element")
+    parser.add_argument("--weight_bits", default=16, type=int, help="number of bits of weight updates")
+    parser.add_argument("--random_normal_bit_shifter", default=24, type=int,
+                        help="random normal samples are multiplied by 2^random_normal_bit_shifter and "
+                             "rounded to the nearest integer. The paper uses 24.")
+    parser.add_argument("--num_norm_bound_samples", default=1000, type=int,
+                        help="number of multidimensional normal samples used in proving the l2 norm bound")
+    parser.add_argument("--inner_prod_bounds_bits", default=44, type=int,
+                        help="the number of bits of each inner product between the model update and discretized "
+                             "multidimensional normal sample. Recommended: weight_bits + random_normal_bit_shifter + 4")
+    parser.add_argument("--max_bound_sq_bits", default=100, type=int,
+                        help="the maximum number of bits of the sum of squares of inner products. "
+                             "Recommended: 2 * (weight_bits + random_normal_bit_shifter) + 20")
+    parser.add_argument("--check_type", default=0, type=int,
+                        help="the type of the check method. Supported: l2 norm check 0, "
+                             "sphere check 1, cosine similarity check 2")
+    parser.add_argument("--norm_bound", default=2.0, type=float, help="the norm bound of each client's update")
+    parser.add_argument("--b_precomp", default=False, type=bool, help="whether store the precomputed group elements")
+
     args = parser.parse_args(arg)
     return args
