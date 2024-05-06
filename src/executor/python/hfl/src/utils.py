@@ -89,6 +89,16 @@ def receive_message(conn: socket.socket, data: Message, pack_format: str = "Q") 
     return data
 
 
+def send_string(conn: socket.socket, data: str) -> None:
+    conn.sendall(data.encode())
+
+
+def receive_string(conn: socket.socket, pack_format: str = "Q") -> str:
+    data_len = receive_int(conn, pack_format)
+    data = receive_all(conn, data_len)
+    return data.decode()
+
+
 def serialize_tensor(t: torch.tensor) -> bytes:
     """Serialize a torch tensor to bytes.
 
@@ -212,6 +222,8 @@ def parseargs(arg=None) -> argparse.Namespace:
                              "sphere check 1, cosine similarity check 2")
     parser.add_argument("--norm_bound", default=2.0, type=float, help="the norm bound of each client's update")
     parser.add_argument("--b_precomp", default=False, type=bool, help="whether store the precomputed group elements")
+    # TODO: this parameter shall be inferred based on the model selected, not given by argument
+    parser.add_argument("--dim", default=False, type=bool, help="the dimension of the model")
 
     args = parser.parse_args(arg)
     return args

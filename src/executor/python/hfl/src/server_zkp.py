@@ -9,7 +9,8 @@ import torch
 import risefl_interface
 
 from .proto import interface_pb2 as proto
-from .utils import parseargs, receive_int, receive_all, receive_message, send_message, send_int, serialize_tensor, deserialize_tensor, check_defense_type
+from .utils import (parseargs, receive_int, receive_all, receive_message, send_message, send_int,
+                    serialize_tensor, deserialize_tensor, check_defense_type, send_string, receive_string)
 
 import os
 import base64
@@ -52,8 +53,8 @@ class Server:
 
         self.weights = {}
 
-        # TODO: add zkp server object
         self.zkp_server = None
+        self.check_param = None
 
     def __start_connection(self) -> None:
         """Start the network connection of server."""
@@ -76,16 +77,9 @@ class Server:
         """Initialize server zkp"""
         defense_type = check_defense_type(args.defense_desc)
 
-        # TODO: need to broadcast check_param to all clients
         # initialize the check parameter
         check_param = risefl_interface.CheckParamFloat(defense_type)
         check_param.l2_param.bound = args.norm_bound
-
-        # TODO: need to broadcast random_bytes_str to all clients
-        # a random string used to generate independent group elements, to be used by both the server and clients
-        random_bytes = os.urandom(64)
-        random_bytes_str = base64.b64encode(random_bytes).decode('ascii')
-        print("random_bytes_str = " + random_bytes_str)
 
         # initialize server
         self.zkp_server = risefl_interface.ServerInterface(
@@ -94,9 +88,14 @@ class Server:
             args.num_norm_bound_samples, args.inner_prod_bound_bits, args.max_bound_sq_bits,
             defense_type, False)
 
+        # TODO: need to broadcast random_bytes_str to all clients
+        # a random string used to generate independent group elements, to be used by both the server and clients
+        # random_bytes = os.urandom(64)
+        # random_bytes_str = base64.b64encode(random_bytes).decode('ascii')
+        random_bytes_str = "r0sdTz/eXbBDsPpB9QiB4P+ejll9juZdbYa4Xt+OZbFlV/n7FUcTMas64getSoWMoV5hE+UmiR6W554xa4SPnQ=="
+        print("random_bytes_str = " + random_bytes_str)
+
         self.zkp_server.initialize_from_seed(random_bytes_str)
-        # add the following to the iterations
-        # self.zkp_server .initialize_new_iteration(check_param)
 
     def start(self) -> None:
         """Start the server.
@@ -172,6 +171,32 @@ if __name__ == "__main__":
     server = Server(num_clients=args.num_clients, host=args.host, port=args.port)
     server.start()
 
+    # TODO: need to start a bulletin to generate these keys, or let each client generate and register
+    # before the training start, the server generates the pub key and priv key and
+    # send them to the corresponding clients
+    sign_pub_keys_vec = risefl_interface.VecSignPubKeys(args.num_clients + 1)
+    sign_prv_keys_vec = risefl_interface.VecSignPrvKeys(args.num_clients + 1)
+    # init the pub_keys_vec and prv_keys_vec
+    for i in range(args.num_clients + 1):
+        sign_key_pair = risefl_interface.gen_sign_key_pair()
+        sign_pub_keys_vec[i] = sign_key_pair.first
+        sign_prv_keys_vec[i] = sign_key_pair.second
+
+    # TODO: may need to add a serialize and deserialize method for SignPubKey and SignPrvKey swig objects
+    # serialize sign_pub_keys_vec
+    sign_pub_keys_vec_str = ""
+    # need to update to key exchange
+    for i in range(args.num_clients):
+        # send the sign_pub_keys_vec and the corresponding sign_prv_keys[i] to each client
+        sign_prv_keys_vec_i_str = ""
+        # serialize the data to message
+        send_string(server.conns[i], sign_pub_keys_vec_str)
+        send_string(server.conns[i], sign_prv_keys_vec_i_str)
+
+    # send the pub_keys_vec and prv_keys_vec[i] to client i, for i \in [1, num_clients + 1]
+
+    server.init_server_zkp(args)
+
     for i in range(args.max_epoch):
         print(f"On epoch {i}:")
         if i > 0:
@@ -185,58 +210,66 @@ if __name__ == "__main__":
         # server.pull()
         # print(f"Server pull weights from clients done")
 
+        # add the following to the iterations
+        server.zkp_server.initialize_new_iteration(server.zkp_server.check_param)
+
         # TODO: step 1 receive messages from all clients
         for i in range(args.num_clients):
             # receive messages from each client
-            client_i_str = ""
-            server.zkp_server.receive_1(client_i_str, i)
+            client_send_str1_i = receive_string(server.conns[i])
+            server.zkp_server.receive_1(client_send_str1_i, i + 1)
 
-        # TODO: step 2.1 send messages to all clients
+        # TODO: step 2 send messages to all clients and receive messages from all clients
         bytes_sent_2 = server.zkp_server.send_2()
         for i in range(args.num_clients):
             # broadcast the message
-            server.pull()
+            send_string(server.conns[i], bytes_sent_2)
 
-        # TODO: step 2.2 receive messages from all clients
+        # what is the difference with two loops and one loop
         for i in range(args.num_clients):
             # receive the message from the client
-            client_i_str = ""
-            server.zkp_server.receive_2(client_i_str, i)
+            client_send_str2_i = receive_string(server.conns[i])
+            server.zkp_server.client_send_str2(client_send_str2_i, i + 1)
 
         # TODO: step 3 send messages to all clients and receive messages
         server.zkp_server.concurrent_process_before_send_3()
         for i in range(args.num_clients):
             server_send_3_str = server.zkp_server.send_3(i)
             # send the string to client i
-            # to add
+            send_string(server.conns[i], server_send_3_str)
+
+        for i in range(args.num_clients):
             # receive str from client i
-            client_i_str = ""
-            server.zkp_server.receive_3(client_i_str, i)
+            client_send_str3_i = receive_string(server.conns[i])
+            server.zkp_server.receive_3(client_send_str3_i, i + 1)
 
         # TODO: step 4 send messages to all clients and receive
         server.zkp_server.process_before_send_4()
         for i in range(args.num_clients):
             server_send_4_str = server.zkp_server.send_4(i)
             # send string to client i
+            send_string(server.conns[i], server_send_4_str)
+
+        for i in range(args.num_clients):
             # receive string from client i
-            client_i_str = ""
-            server.zkp_server.receive_4(client_i_str, i)
+            client_send_str4 = receive_string(server.conns[i])
+            server.zkp_server.receive_4(client_send_str4, i + 1)
 
         # TODO: step 5 send messages to all clients and receive
         server.process_before_send_5()
         for i in range(args.num_clients):
             server_send_5_str = server.zkp_server.send_5(i)
             # send string to client i
+            send_string(server.conns[i], server_send_5_str)
+
+        for i in range(args.num_clients):
             # receive string from client i
-            client_i_str = ""
-            server.zkp_server.receive_5(client_i_str, i)
+            client_send_str5 = receive_string(server.conns[i])
+            server.zkp_server.receive_5(client_send_str5, i + 1)
 
         # TODO: finish one iteration
         server.zkp_server.finish_iteration()
 
-        # TODO: broadcast weights
-        for i in range(args.num_clients):
-            # broadcast the updated weights to clients
-            server.push()
+        # TODO: reconstruct the flattened weights to tensors and assign to server.weights
 
     server.close()

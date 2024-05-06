@@ -3,7 +3,7 @@
 import socket
 
 from .proto import interface_pb2 as proto
-from .utils import parseargs, check_defense_type
+from .utils import parseargs, check_defense_type, receive_message, send_message, send_string, receive_string
 from .dataset.data_loader import get_dataset
 
 import numpy as np
@@ -54,7 +54,6 @@ class Client:
 
         self.weights = {}
 
-        # TODO: add zkp client object
         self.zkp_client = None
         self.check_param = None
 
@@ -70,25 +69,27 @@ class Client:
         """Initialize zkp params etc."""
         defense_type = check_defense_type(args.defense_desc)
 
-        # TODO: need to update the generation of the pub and priv keys
-        sign_pub_keys_vec = risefl_interface.VecSignPubKeys(args.num_clients + 1)
-        sign_prv_keys_vec = risefl_interface.VecSignPrvKeys(args.num_clients + 1)
+        # receive the sign_pub_keys_vec and sign_prv_keys_vec[i] from the server
+        message = proto.WeightsExchange()
+        sign_pub_keys_vec, sign_prv_keys_vec_i = receive_message(self.sock, message)
 
+        # the client id in the zkp library starts from 1, so the index needs to be increased by 1
         self.zkp_client = risefl_interface.ClientInterface(
             args.num_clients, args.max_malicious_clients, args.dim,
             args.num_blinds_per_group_element, args.weight_bits, args.random_normal_bit_shifter,
             args.num_norm_bound_samples, args.inner_prod_bound_bits, args.max_bound_sq_bits,
-            defense_type, self.global_rank,
-            sign_pub_keys_vec, sign_prv_keys_vec[self.global_rank + 1])
+            defense_type, self.global_rank + 1,
+            sign_pub_keys_vec, sign_prv_keys_vec_i)
 
-        # TODO: need to receive check_param from the server
         # initialize the check parameter
         self.check_param = risefl_interface.CheckParamFloat(defense_type)
         self.check_param.l2_param.bound = args.norm_bound
 
-        # TODO: need to receive the random_bytes_str from the server
-        random_bytes = os.urandom(64)
-        random_bytes_str = base64.b64encode(random_bytes).decode('ascii')
+        # TODO: need to receive random_bytes_str from server, currently hard-coded for both server and clients
+        # a random string used to generate independent group elements, to be used by both the server and clients
+        # random_bytes = os.urandom(64)
+        # random_bytes_str = base64.b64encode(random_bytes).decode('ascii')
+        random_bytes_str = "r0sdTz/eXbBDsPpB9QiB4P+ejll9juZdbYa4Xt+OZbFlV/n7FUcTMas64getSoWMoV5hE+UmiR6W554xa4SPnQ=="
         print("random_bytes_str = " + random_bytes_str)
 
         self.zkp_client.initialize_from_seed(random_bytes_str)
@@ -145,6 +146,8 @@ def run(
     # Connect to server
     client = Client(global_rank=device_id)
     client.start()
+
+    client.init_zkp_client(args)
 
     # if args.gpu_id:
     #     torch.cuda.set_device(args.gpu_id)
@@ -205,48 +208,33 @@ def run(
         # flatten weights to 1D array
         flatten_weights = client.weights
         converted_weights = risefl_interface.VecFloat(flatten_weights)
-        send_str1 = client.zkp_client.send_1(client.check_param, converted_weights)
+        client_send_str1 = client.zkp_client.send_1(client.check_param, converted_weights)
         # send this string to the server
+        send_string(client.sock, client_send_str1)
 
-        # TODO: step 2.1 receive message from the server
-        bytes_sent_2 = client.pull()
+        # TODO: step 2 receive message from the server and sends message back to the server
+        sent_2 = receive_string(client.sock)
+        bytes_sent_2 = sent_2.encode()
+        client_send_str2 = client.zkp_client.receive_and_send_2(bytes_sent_2)
+        send_string(client.sock, client_send_str2)
 
-        # TODO: step 2.2 client sends message back to the server
-        client.zkp_client.receive_and_send_2(bytes_sent_2)
-        # send the message to the server
-        # TO add
-
-        # TODO: step 3.1 receive message from the server
+        # TODO: step 3 receive message from the server and sends message back to the server
         # receive message from server
-        server_sent_3_str = ""
-        client_str = client.zkp_client.receive_and_send_3(server_sent_3_str)
+        server_sent_3_str = receive_string(client.sock)
+        client_send_str3 = client.zkp_client.receive_and_send_3(server_sent_3_str)
+        send_string(client.sock, client_send_str3)
 
-        # TODO: step 3.2 client sends message back to the server
-        # send back to the server
-        client.push()
-
-        # TODO: step 4.1 receive message from the server
+        # TODO: step 4.1 receive message from the server and sends message back to the server
         # receive message from server
-        server_sent_4_str = ""
-        client_str = client.zkp_client.receive_and_send_4(server_sent_4_str)
+        server_sent_4_str = receive_string(client.sock)
+        client_send_str4 = client.zkp_client.receive_and_send_4(server_sent_4_str)
+        send_string(client.sock, client_send_str4)
 
-        # TODO: step 4.2 client sends message back to the server
-        # send message back to the server
-        client.push()
-
-        # TODO: step 5.1 receive message from the server
+        # TODO: step 5.1 receive message from the server and sends message back to the server
         # receive message from server
-        server_sent_5_str = ""
-        client_str = client.zkp_client.receive_and_send_5(server_sent_5_str)
-
-        # TODO: step 5.2 client sends message back to the server
-        # send message back to the server
-        client.push()
-
-        # TODO: receive updated model parameters and convert
-        updated_flatten_weights = ""
-        updated_extended_weights = ""
-        client.weights = updated_extended_weights
+        server_sent_5_str = receive_string(client.sock)
+        client_send_str5 = client.zkp_client.receive_and_send_5(server_sent_5_str)
+        send_string(client.sock, client_send_str5)
 
         # make changes in local_model
 
