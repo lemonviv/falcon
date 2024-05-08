@@ -182,18 +182,17 @@ if __name__ == "__main__":
         sign_pub_keys_vec[i] = sign_key_pair.first
         sign_prv_keys_vec[i] = sign_key_pair.second
 
-    # TODO: may need to add a serialize and deserialize method for SignPubKey and SignPrvKey swig objects
-    # serialize sign_pub_keys_vec
-    sign_pub_keys_vec_str = ""
-    # need to update to key exchange
+    # need to update to key exchange (the current implementation is not efficient)
+    # send the pub_keys_vec and prv_keys_vec[i] to client i, for i \in [1, num_clients + 1]
     for i in range(args.num_clients):
         # send the sign_pub_keys_vec and the corresponding sign_prv_keys[i] to each client
-        sign_prv_keys_vec_i_str = ""
-        # serialize the data to message
-        send_string(server.conns[i], sign_pub_keys_vec_str)
+        for j in range(args.num_clients + 1):
+            sign_pub_keys_vec_j_str = risefl_interface.convert_sign_pub_key_to_string(sign_pub_keys_vec[j])
+            send_string(server.conns[i], sign_pub_keys_vec_j_str)
+        # serialize the private key and send it the client i
+        # as the client index of the sign_prv_keys_vec start from 1
+        sign_prv_keys_vec_i_str = risefl_interface.convert_sign_prv_key_to_string(sign_prv_keys_vec[i+1])
         send_string(server.conns[i], sign_prv_keys_vec_i_str)
-
-    # send the pub_keys_vec and prv_keys_vec[i] to client i, for i \in [1, num_clients + 1]
 
     server.init_server_zkp(args)
 
@@ -213,13 +212,13 @@ if __name__ == "__main__":
         # add the following to the iterations
         server.zkp_server.initialize_new_iteration(server.zkp_server.check_param)
 
-        # TODO: step 1 receive messages from all clients
+        # step 1 receive messages from all clients
         for i in range(args.num_clients):
             # receive messages from each client
             client_send_str1_i = receive_string(server.conns[i])
             server.zkp_server.receive_1(client_send_str1_i, i + 1)
 
-        # TODO: step 2 send messages to all clients and receive messages from all clients
+        # step 2 send messages to all clients and receive messages from all clients
         bytes_sent_2 = server.zkp_server.send_2()
         for i in range(args.num_clients):
             # broadcast the message
@@ -231,7 +230,7 @@ if __name__ == "__main__":
             client_send_str2_i = receive_string(server.conns[i])
             server.zkp_server.client_send_str2(client_send_str2_i, i + 1)
 
-        # TODO: step 3 send messages to all clients and receive messages
+        # step 3 send messages to all clients and receive messages
         server.zkp_server.concurrent_process_before_send_3()
         for i in range(args.num_clients):
             server_send_3_str = server.zkp_server.send_3(i)
@@ -243,7 +242,7 @@ if __name__ == "__main__":
             client_send_str3_i = receive_string(server.conns[i])
             server.zkp_server.receive_3(client_send_str3_i, i + 1)
 
-        # TODO: step 4 send messages to all clients and receive
+        # step 4 send messages to all clients and receive
         server.zkp_server.process_before_send_4()
         for i in range(args.num_clients):
             server_send_4_str = server.zkp_server.send_4(i)
@@ -255,8 +254,8 @@ if __name__ == "__main__":
             client_send_str4 = receive_string(server.conns[i])
             server.zkp_server.receive_4(client_send_str4, i + 1)
 
-        # TODO: step 5 send messages to all clients and receive
-        server.process_before_send_5()
+        # step 5 send messages to all clients and receive
+        server.zkp_server.process_before_send_5()
         for i in range(args.num_clients):
             server_send_5_str = server.zkp_server.send_5(i)
             # send string to client i
@@ -267,9 +266,10 @@ if __name__ == "__main__":
             client_send_str5 = receive_string(server.conns[i])
             server.zkp_server.receive_5(client_send_str5, i + 1)
 
-        # TODO: finish one iteration
+        # finish one iteration
         server.zkp_server.finish_iteration()
 
-        # TODO: reconstruct the flattened weights to tensors and assign to server.weights
+        # reconstruct the flattened weights to tensors and assign to server.weights
+        # server.zkp_server.final_update_float
 
     server.close()

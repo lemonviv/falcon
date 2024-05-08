@@ -69,9 +69,12 @@ class Client:
         """Initialize zkp params etc."""
         defense_type = check_defense_type(args.defense_desc)
 
-        # receive the sign_pub_keys_vec and sign_prv_keys_vec[i] from the server
-        message = proto.WeightsExchange()
-        sign_pub_keys_vec, sign_prv_keys_vec_i = receive_message(self.sock, message)
+        sign_pub_keys_vec = risefl_interface.VecSignPubKeys(args.num_clients + 1)
+        for j in range(args.num_clients + 1):
+            recv_pub_key_j_str = receive_string(self.sock)
+            sign_pub_keys_vec[j] = risefl_interface.convert_string_to_sign_pub_key(recv_pub_key_j_str)
+        recv_prv_key_str = receive_string(self.sock)
+        sign_prv_keys_vec_i = risefl_interface.convert_string_to_sign_prv_key(recv_prv_key_str)
 
         # the client id in the zkp library starts from 1, so the index needs to be increased by 1
         self.zkp_client = risefl_interface.ClientInterface(
@@ -204,7 +207,7 @@ def run(
         client.weights = copy.deepcopy(w)
         print(f'Local training loss : {loss}')
 
-        # TODO: step 1 client sends message to the server
+        # step 1 client sends message to the server
         # flatten weights to 1D array
         flatten_weights = client.weights
         converted_weights = risefl_interface.VecFloat(flatten_weights)
@@ -212,25 +215,25 @@ def run(
         # send this string to the server
         send_string(client.sock, client_send_str1)
 
-        # TODO: step 2 receive message from the server and sends message back to the server
+        # step 2 receive message from the server and sends message back to the server
         sent_2 = receive_string(client.sock)
         bytes_sent_2 = sent_2.encode()
         client_send_str2 = client.zkp_client.receive_and_send_2(bytes_sent_2)
         send_string(client.sock, client_send_str2)
 
-        # TODO: step 3 receive message from the server and sends message back to the server
+        # step 3 receive message from the server and sends message back to the server
         # receive message from server
         server_sent_3_str = receive_string(client.sock)
         client_send_str3 = client.zkp_client.receive_and_send_3(server_sent_3_str)
         send_string(client.sock, client_send_str3)
 
-        # TODO: step 4.1 receive message from the server and sends message back to the server
+        # step 4 receive message from the server and sends message back to the server
         # receive message from server
         server_sent_4_str = receive_string(client.sock)
         client_send_str4 = client.zkp_client.receive_and_send_4(server_sent_4_str)
         send_string(client.sock, client_send_str4)
 
-        # TODO: step 5.1 receive message from the server and sends message back to the server
+        # step 5 receive message from the server and sends message back to the server
         # receive message from server
         server_sent_5_str = receive_string(client.sock)
         client_send_str5 = client.zkp_client.receive_and_send_5(server_sent_5_str)
