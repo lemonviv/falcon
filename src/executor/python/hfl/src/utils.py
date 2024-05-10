@@ -5,6 +5,7 @@ import socket
 import struct
 
 import torch
+import numpy as np
 from google.protobuf.message import Message
 
 import risefl_interface
@@ -90,13 +91,20 @@ def receive_message(conn: socket.socket, data: Message, pack_format: str = "Q") 
 
 
 def send_string(conn: socket.socket, data: str) -> None:
-    conn.sendall(data.encode())
+    data_bytes = data.encode()
+    data_bytes_len = len(data_bytes)
+    send_int(conn, data_bytes_len)
+    conn.sendall(data_bytes)
 
 
-def receive_string(conn: socket.socket, pack_format: str = "Q") -> str:
-    data_len = receive_int(conn, pack_format)
+def receive_string(conn: socket.socket) -> str:
+    data_len = receive_int(conn)
+    print("receive_string: data_len = ", data_len)
     data = receive_all(conn, data_len)
-    return data.decode()
+    # print("received_string_bytes = ", data)
+    data_str = data.decode()
+    # print("data_str = ", data_str)
+    return data_str
 
 
 def serialize_tensor(t: torch.tensor) -> bytes:
@@ -124,17 +132,55 @@ def deserialize_tensor(t: bytes) -> torch.tensor:
     return torch.from_numpy(pickle.loads(t))
 
 
-def check_defense_type(defense_desc) -> int:
+def check_defense_type(check_type) -> int:
     defense_type = 0
-    if defense_desc == "l2norm":
+    if check_type == 0:
         defense_type = risefl_interface.CHECK_TYPE_L2NORM
-    elif defense_desc == "sphere":
+    elif check_type == 1:
         defense_type = risefl_interface.CHECK_TYPE_SPHERE
-    elif defense_desc == "cosine":
+    elif check_type == 2:
         defense_type = risefl_interface.CHECK_TYPE_COSINE_SIM
     else:
         raise ValueError("Unsupported defense type!")
     return defense_type
+
+
+def flatten_model_weights(model_weights):
+    # Get the model parameters as a dictionary
+    # state_dict = model.state_dict()
+
+    # Flatten all parameters into a 1D array
+    flattened_weights = np.concatenate([p.flatten().cpu().numpy() for p in model_weights.values()])
+    return flattened_weights
+
+
+def unpack_flatten_model_weights(model, flattened_weights):
+    # Get the model parameters as a dictionary
+    state_dict = model.state_dict()
+
+    # Start index to keep track of the current position in the flattened array
+    start_index = 0
+
+    # Loop through the parameters in the state dict
+    for key, value in state_dict.items():
+        # Calculate the size of the parameter tensor
+        size = np.prod(value.size())
+
+        # Extract the corresponding segment from the flattened array
+        param_data = flattened_weights[start_index:start_index+size]
+
+        # Reshape the data and convert it to a tensor
+        param_tensor = torch.tensor(param_data).reshape(value.size())
+
+        # Set the parameter tensor in the model's state dict
+        state_dict[key] = param_tensor
+
+        # Update the start index for the next parameter
+        start_index += size
+
+    # Load the state dict into the model
+    # model.load_state_dict(state_dict)
+    return state_dict
 
 
 def parseargs(arg=None) -> argparse.Namespace:
@@ -198,7 +244,7 @@ def parseargs(arg=None) -> argparse.Namespace:
                         help="the number of local epochs: E")
     parser.add_argument('--local_bs', type=int, default=32,
                         help="local batch size: B")
-    parser.add_argument("--num_clients", default=10, type=int)
+    parser.add_argument("--num_clients", default=3, type=int)
     parser.add_argument("--host", default="127.0.0.1")
     parser.add_argument("--port", default=1234)
 
@@ -211,7 +257,7 @@ def parseargs(arg=None) -> argparse.Namespace:
                              "rounded to the nearest integer. The paper uses 24.")
     parser.add_argument("--num_norm_bound_samples", default=1000, type=int,
                         help="number of multidimensional normal samples used in proving the l2 norm bound")
-    parser.add_argument("--inner_prod_bounds_bits", default=44, type=int,
+    parser.add_argument("--inner_prod_bound_bits", default=44, type=int,
                         help="the number of bits of each inner product between the model update and discretized "
                              "multidimensional normal sample. Recommended: weight_bits + random_normal_bit_shifter + 4")
     parser.add_argument("--max_bound_sq_bits", default=100, type=int,
@@ -223,7 +269,7 @@ def parseargs(arg=None) -> argparse.Namespace:
     parser.add_argument("--norm_bound", default=2.0, type=float, help="the norm bound of each client's update")
     parser.add_argument("--b_precomp", default=False, type=bool, help="whether store the precomputed group elements")
     # TODO: this parameter shall be inferred based on the model selected, not given by argument
-    parser.add_argument("--dim", default=False, type=bool, help="the dimension of the model")
+    parser.add_argument("--dim", default=4746, type=int, help="the dimension of the model")
 
     args = parser.parse_args(arg)
     return args

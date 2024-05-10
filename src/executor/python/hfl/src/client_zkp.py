@@ -1,9 +1,10 @@
 #!/usr/bin/env python3
 
 import socket
+import sys
 
 from .proto import interface_pb2 as proto
-from .utils import parseargs, check_defense_type, receive_message, send_message, send_string, receive_string
+from .utils import parseargs, check_defense_type, send_string, receive_string, flatten_model_weights
 from .dataset.data_loader import get_dataset
 
 import numpy as np
@@ -19,6 +20,7 @@ from .models import MLP_Bank, CNNMnist
 from .update import LocalUpdate, test_inference
 
 import risefl_interface
+
 
 class Client:
     """Client sends and receives protobuf messages.
@@ -67,14 +69,21 @@ class Client:
 
     def init_zkp_client(self, args) -> None:
         """Initialize zkp params etc."""
-        defense_type = check_defense_type(args.defense_desc)
+        defense_type = check_defense_type(args.check_type)
 
         sign_pub_keys_vec = risefl_interface.VecSignPubKeys(args.num_clients + 1)
+        print("args.num_clients + 1 = ", args.num_clients + 1)
         for j in range(args.num_clients + 1):
+            print("j = ", j)
             recv_pub_key_j_str = receive_string(self.sock)
             sign_pub_keys_vec[j] = risefl_interface.convert_string_to_sign_pub_key(recv_pub_key_j_str)
+            print("recv " + str(j) + " sign_pub_key success")
+        print("recv_pub_key finished")
         recv_prv_key_str = receive_string(self.sock)
+        print("recv_prv_key_str = ", recv_prv_key_str)
         sign_prv_keys_vec_i = risefl_interface.convert_string_to_sign_prv_key(recv_prv_key_str)
+
+        print("init sign_keys success")
 
         # the client id in the zkp library starts from 1, so the index needs to be increased by 1
         self.zkp_client = risefl_interface.ClientInterface(
@@ -83,6 +92,8 @@ class Client:
             args.num_norm_bound_samples, args.inner_prod_bound_bits, args.max_bound_sq_bits,
             defense_type, self.global_rank + 1,
             sign_pub_keys_vec, sign_prv_keys_vec_i)
+
+        print("create zkp_client success")
 
         # initialize the check parameter
         self.check_param = risefl_interface.CheckParamFloat(defense_type)
@@ -96,6 +107,8 @@ class Client:
         print("random_bytes_str = " + random_bytes_str)
 
         self.zkp_client.initialize_from_seed(random_bytes_str)
+
+        print("init zkp_client success")
 
     def start(self) -> None:
         """Start the client.
@@ -168,6 +181,7 @@ def run(
     elif args.model == 'mlp':
         # Multi-layer preceptron
         img_size = train_dataset[0][0].shape
+        print("img_size = ", img_size)
         len_in = 1
         for x in img_size:
             len_in *= x
@@ -209,17 +223,27 @@ def run(
 
         # step 1 client sends message to the server
         # flatten weights to 1D array
-        flatten_weights = client.weights
+        print(f"client.weights.type: {type(client.weights)}")
+        # print("client.weights: ", client.weights)
+        flatten_weights = flatten_model_weights(w)
+        flatten_weights = flatten_weights.tolist()
+        print(f"flatten_weights.type: {type(flatten_weights)}")
+        print(len(flatten_weights))
+        # print(f"flatten_weights: {flatten_weights}")
         converted_weights = risefl_interface.VecFloat(flatten_weights)
         client_send_str1 = client.zkp_client.send_1(client.check_param, converted_weights)
         # send this string to the server
         send_string(client.sock, client_send_str1)
 
+        print("client_sends_str1 finished")
+
         # step 2 receive message from the server and sends message back to the server
-        sent_2 = receive_string(client.sock)
-        bytes_sent_2 = sent_2.encode()
-        client_send_str2 = client.zkp_client.receive_and_send_2(bytes_sent_2)
+        server_sent_2_str = receive_string(client.sock)
+        # bytes_sent_2 = sent_2.encode()
+        client_send_str2 = client.zkp_client.receive_and_send_2(server_sent_2_str)
         send_string(client.sock, client_send_str2)
+
+        print("client_sends_str2 finished")
 
         # step 3 receive message from the server and sends message back to the server
         # receive message from server
@@ -227,17 +251,23 @@ def run(
         client_send_str3 = client.zkp_client.receive_and_send_3(server_sent_3_str)
         send_string(client.sock, client_send_str3)
 
+        print("client_sends_str3 finished")
+
         # step 4 receive message from the server and sends message back to the server
         # receive message from server
         server_sent_4_str = receive_string(client.sock)
         client_send_str4 = client.zkp_client.receive_and_send_4(server_sent_4_str)
         send_string(client.sock, client_send_str4)
 
+        print("client_sends_str4 finished")
+
         # step 5 receive message from the server and sends message back to the server
         # receive message from server
         server_sent_5_str = receive_string(client.sock)
         client_send_str5 = client.zkp_client.receive_and_send_5(server_sent_5_str)
         send_string(client.sock, client_send_str5)
+
+        print("client_sends_str5 finished")
 
         # make changes in local_model
 

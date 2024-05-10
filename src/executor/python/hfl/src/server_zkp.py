@@ -10,10 +10,12 @@ import risefl_interface
 
 from .proto import interface_pb2 as proto
 from .utils import (parseargs, receive_int, receive_all, receive_message, send_message, send_int,
-                    serialize_tensor, deserialize_tensor, check_defense_type, send_string, receive_string)
-
+                    serialize_tensor, deserialize_tensor, check_defense_type, send_string, receive_string, unpack_flatten_model_weights)
+from .models import MLP_Bank, CNNMnist
 import os
 import base64
+import numpy as np
+
 
 class Server:
     """Server sends and receives protobuf messages.
@@ -75,11 +77,11 @@ class Server:
 
     def init_server_zkp(self, args) -> None:
         """Initialize server zkp"""
-        defense_type = check_defense_type(args.defense_desc)
+        defense_type = check_defense_type(args.check_type)
 
         # initialize the check parameter
-        check_param = risefl_interface.CheckParamFloat(defense_type)
-        check_param.l2_param.bound = args.norm_bound
+        self.check_param = risefl_interface.CheckParamFloat(defense_type)
+        self.check_param.l2_param.bound = args.norm_bound
 
         # initialize server
         self.zkp_server = risefl_interface.ServerInterface(
@@ -186,15 +188,40 @@ if __name__ == "__main__":
     # send the pub_keys_vec and prv_keys_vec[i] to client i, for i \in [1, num_clients + 1]
     for i in range(args.num_clients):
         # send the sign_pub_keys_vec and the corresponding sign_prv_keys[i] to each client
+        print("i = ", i)
         for j in range(args.num_clients + 1):
+            print("j = ", j)
             sign_pub_keys_vec_j_str = risefl_interface.convert_sign_pub_key_to_string(sign_pub_keys_vec[j])
+            print(f"sign_pub_keys_vec_j_str: {sign_pub_keys_vec_j_str}")
+            print(f"size = {len(sign_pub_keys_vec_j_str)}")
             send_string(server.conns[i], sign_pub_keys_vec_j_str)
+            print("send")
         # serialize the private key and send it the client i
         # as the client index of the sign_prv_keys_vec start from 1
         sign_prv_keys_vec_i_str = risefl_interface.convert_sign_prv_key_to_string(sign_prv_keys_vec[i+1])
+        print(f"sign_prv_keys_vec_i_str: {sign_prv_keys_vec_i_str}")
+        print(f"size = {len(sign_prv_keys_vec_i_str)}")
         send_string(server.conns[i], sign_prv_keys_vec_i_str)
+        print("send")
 
     server.init_server_zkp(args)
+
+    # BUILD MODEL
+    if args.model == 'cnn':
+        # Convolutional neural netork
+        if args.data == 'mnist':
+            global_model = CNNMnist(num_channels=args.num_channels, num_classes=args.num_classes)
+
+    elif args.model == 'mlp':
+        # Multi-layer preceptron
+        # TODO: need to get from argument or client
+        img_size = torch.Size([1, 63])
+        len_in = 1
+        for x in img_size:
+            len_in *= x
+            global_model = MLP_Bank(dim_in=len_in, dim_hidden=64, dim_out=args.num_classes)
+    else:
+        exit('Error: unrecognized model')
 
     for i in range(args.max_epoch):
         print(f"On epoch {i}:")
@@ -210,7 +237,9 @@ if __name__ == "__main__":
         # print(f"Server pull weights from clients done")
 
         # add the following to the iterations
-        server.zkp_server.initialize_new_iteration(server.zkp_server.check_param)
+        server.zkp_server.initialize_new_iteration(server.check_param)
+
+        print("server initialize new iteration finished")
 
         # step 1 receive messages from all clients
         for i in range(args.num_clients):
@@ -218,17 +247,23 @@ if __name__ == "__main__":
             client_send_str1_i = receive_string(server.conns[i])
             server.zkp_server.receive_1(client_send_str1_i, i + 1)
 
+        print("server step 1 finished")
+
         # step 2 send messages to all clients and receive messages from all clients
         bytes_sent_2 = server.zkp_server.send_2()
         for i in range(args.num_clients):
             # broadcast the message
             send_string(server.conns[i], bytes_sent_2)
 
+        print("server step 2 -- send string finished")
+
         # what is the difference with two loops and one loop
         for i in range(args.num_clients):
             # receive the message from the client
             client_send_str2_i = receive_string(server.conns[i])
-            server.zkp_server.client_send_str2(client_send_str2_i, i + 1)
+            server.zkp_server.receive_2(client_send_str2_i, i + 1)
+
+        print("server step 2 -- receive string finished")
 
         # step 3 send messages to all clients and receive messages
         server.zkp_server.concurrent_process_before_send_3()
@@ -237,10 +272,14 @@ if __name__ == "__main__":
             # send the string to client i
             send_string(server.conns[i], server_send_3_str)
 
+        print("server step 3 -- send string finished")
+
         for i in range(args.num_clients):
             # receive str from client i
             client_send_str3_i = receive_string(server.conns[i])
             server.zkp_server.receive_3(client_send_str3_i, i + 1)
+
+        print("server step 3 -- receive string finished")
 
         # step 4 send messages to all clients and receive
         server.zkp_server.process_before_send_4()
@@ -249,10 +288,14 @@ if __name__ == "__main__":
             # send string to client i
             send_string(server.conns[i], server_send_4_str)
 
+        print("server step 4 -- send string finished")
+
         for i in range(args.num_clients):
             # receive string from client i
             client_send_str4 = receive_string(server.conns[i])
             server.zkp_server.receive_4(client_send_str4, i + 1)
+
+        print("server step 4 -- receive string finished")
 
         # step 5 send messages to all clients and receive
         server.zkp_server.process_before_send_5()
@@ -261,15 +304,24 @@ if __name__ == "__main__":
             # send string to client i
             send_string(server.conns[i], server_send_5_str)
 
+        print("server step 5 -- send string finished")
+
         for i in range(args.num_clients):
             # receive string from client i
             client_send_str5 = receive_string(server.conns[i])
             server.zkp_server.receive_5(client_send_str5, i + 1)
 
+        print("server step 5 -- receive string finished")
+
         # finish one iteration
         server.zkp_server.finish_iteration()
 
+        print("server finish iteration")
+
         # reconstruct the flattened weights to tensors and assign to server.weights
-        # server.zkp_server.final_update_float
+        print(f"final_update.type: {type(server.zkp_server.final_update_float)}")
+        final_update_float_ndarray = np.array(server.zkp_server.final_update_float)
+        weights = unpack_flatten_model_weights(global_model, final_update_float_ndarray)
+        server.weights = weights
 
     server.close()
