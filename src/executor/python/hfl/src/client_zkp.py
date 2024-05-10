@@ -93,6 +93,8 @@ class Client:
             defense_type, self.global_rank + 1,
             sign_pub_keys_vec, sign_prv_keys_vec_i)
 
+        print(f"self.global_rank + 1 = {self.global_rank + 1}")
+
         print("create zkp_client success")
 
         # initialize the check parameter
@@ -212,30 +214,30 @@ def run(
 
         global_model.load_state_dict(client.weights)
 
-        print(f"client start local update...")
+        print("****** client start local update...")
         local_model = LocalUpdate(args=args, dataset=train_dataset)
         w, loss = local_model.update_weights(
                 model=copy.deepcopy(global_model), global_round=epoch)
-        print(f"client finish local update...")
+        print("****** client finish local update...")
 
         client.weights = copy.deepcopy(w)
-        print(f'Local training loss : {loss}')
+        print(f'****** Local training loss : {loss}')
 
         # step 1 client sends message to the server
         # flatten weights to 1D array
-        print(f"client.weights.type: {type(client.weights)}")
+        print(f"****** client.weights.type: {type(client.weights)}")
         # print("client.weights: ", client.weights)
         flatten_weights = flatten_model_weights(w)
         flatten_weights = flatten_weights.tolist()
-        print(f"flatten_weights.type: {type(flatten_weights)}")
-        print(len(flatten_weights))
+        print(f"****** flatten_weights.type: {type(flatten_weights)}")
+        print(f"****** flatten_weights.length: {len(flatten_weights)}")
         # print(f"flatten_weights: {flatten_weights}")
         converted_weights = risefl_interface.VecFloat(flatten_weights)
         client_send_str1 = client.zkp_client.send_1(client.check_param, converted_weights)
         # send this string to the server
         send_string(client.sock, client_send_str1)
 
-        print("client_sends_str1 finished")
+        print("****** client_sends_str1 finished")
 
         # step 2 receive message from the server and sends message back to the server
         server_sent_2_str = receive_string(client.sock)
@@ -243,7 +245,7 @@ def run(
         client_send_str2 = client.zkp_client.receive_and_send_2(server_sent_2_str)
         send_string(client.sock, client_send_str2)
 
-        print("client_sends_str2 finished")
+        print("****** client_sends_str2 finished")
 
         # step 3 receive message from the server and sends message back to the server
         # receive message from server
@@ -251,7 +253,7 @@ def run(
         client_send_str3 = client.zkp_client.receive_and_send_3(server_sent_3_str)
         send_string(client.sock, client_send_str3)
 
-        print("client_sends_str3 finished")
+        print("****** client_sends_str3 finished")
 
         # step 4 receive message from the server and sends message back to the server
         # receive message from server
@@ -259,7 +261,7 @@ def run(
         client_send_str4 = client.zkp_client.receive_and_send_4(server_sent_4_str)
         send_string(client.sock, client_send_str4)
 
-        print("client_sends_str4 finished")
+        print("****** client_sends_str4 finished")
 
         # step 5 receive message from the server and sends message back to the server
         # receive message from server
@@ -267,7 +269,7 @@ def run(
         client_send_str5 = client.zkp_client.receive_and_send_5(server_sent_5_str)
         send_string(client.sock, client_send_str5)
 
-        print("client_sends_str5 finished")
+        print("****** client_sends_str5 finished")
 
         # make changes in local_model
 

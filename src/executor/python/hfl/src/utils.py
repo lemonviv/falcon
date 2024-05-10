@@ -99,7 +99,7 @@ def send_string(conn: socket.socket, data: str) -> None:
 
 def receive_string(conn: socket.socket) -> str:
     data_len = receive_int(conn)
-    print("receive_string: data_len = ", data_len)
+    print("****** [utils.receive_string] data_len = ", data_len)
     data = receive_all(conn, data_len)
     # print("received_string_bytes = ", data)
     data_str = data.decode()
@@ -165,16 +165,12 @@ def unpack_flatten_model_weights(model, flattened_weights):
     for key, value in state_dict.items():
         # Calculate the size of the parameter tensor
         size = np.prod(value.size())
-
         # Extract the corresponding segment from the flattened array
         param_data = flattened_weights[start_index:start_index+size]
-
         # Reshape the data and convert it to a tensor
         param_tensor = torch.tensor(param_data).reshape(value.size())
-
         # Set the parameter tensor in the model's state dict
         state_dict[key] = param_tensor
-
         # Update the start index for the next parameter
         start_index += size
 
@@ -249,7 +245,7 @@ def parseargs(arg=None) -> argparse.Namespace:
     parser.add_argument("--port", default=1234)
 
     # parameters required by the zkp library
-    parser.add_argument("--max_malicious_clients", default=2, type=int, help="maximum number of malicious clients")
+    parser.add_argument("--max_malicious_clients", default=1, type=int, help="maximum number of malicious clients")
     parser.add_argument("--num_blinds_per_group_element", default=1, type=int, help="number of blinds per group element")
     parser.add_argument("--weight_bits", default=16, type=int, help="number of bits of weight updates")
     parser.add_argument("--random_normal_bit_shifter", default=24, type=int,
