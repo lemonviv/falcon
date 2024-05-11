@@ -4,7 +4,7 @@ import socket
 import sys
 
 from .proto import interface_pb2 as proto
-from .utils import parseargs, check_defense_type, send_string, receive_string, flatten_model_weights
+from .utils import parseargs, check_defense_type, send_string, receive_string, flatten_model_weights, flattened_weight_size
 from .dataset.data_loader import get_dataset
 
 import numpy as np
@@ -58,6 +58,7 @@ class Client:
 
         self.zkp_client = None
         self.check_param = None
+        self.random_bytes_str = None
 
     def __start_connection(self) -> None:
         """Start the network connection to server."""
@@ -67,49 +68,50 @@ class Client:
         """Sending global rank to server"""
         utils.send_int(self.sock, self.global_rank)
 
-    def init_zkp_client(self, args) -> None:
+    def init_zkp_client(self, args, global_model) -> None:
         """Initialize zkp params etc."""
         defense_type = check_defense_type(args.check_type)
 
         sign_pub_keys_vec = risefl_interface.VecSignPubKeys(args.num_clients + 1)
         print("args.num_clients + 1 = ", args.num_clients + 1)
         for j in range(args.num_clients + 1):
-            print("j = ", j)
+            # print("j = ", j)
             recv_pub_key_j_str = receive_string(self.sock)
             sign_pub_keys_vec[j] = risefl_interface.convert_string_to_sign_pub_key(recv_pub_key_j_str)
-            print("recv " + str(j) + " sign_pub_key success")
-        print("recv_pub_key finished")
+            # print("recv " + str(j) + " sign_pub_key success")
+        # print("recv_pub_key finished")
         recv_prv_key_str = receive_string(self.sock)
-        print("recv_prv_key_str = ", recv_prv_key_str)
+        # print("recv_prv_key_str = ", recv_prv_key_str)
         sign_prv_keys_vec_i = risefl_interface.convert_string_to_sign_prv_key(recv_prv_key_str)
 
         print("init sign_keys success")
 
+        dim = int(flattened_weight_size(global_model))
+        print("dim = ", dim)
+
         # the client id in the zkp library starts from 1, so the index needs to be increased by 1
         self.zkp_client = risefl_interface.ClientInterface(
-            args.num_clients, args.max_malicious_clients, args.dim,
+            args.num_clients, args.max_malicious_clients, dim,
             args.num_blinds_per_group_element, args.weight_bits, args.random_normal_bit_shifter,
             args.num_norm_bound_samples, args.inner_prod_bound_bits, args.max_bound_sq_bits,
             defense_type, self.global_rank + 1,
             sign_pub_keys_vec, sign_prv_keys_vec_i)
 
         print(f"self.global_rank + 1 = {self.global_rank + 1}")
-
         print("create zkp_client success")
 
         # initialize the check parameter
         self.check_param = risefl_interface.CheckParamFloat(defense_type)
         self.check_param.l2_param.bound = args.norm_bound
 
-        # TODO: need to receive random_bytes_str from server, currently hard-coded for both server and clients
         # a random string used to generate independent group elements, to be used by both the server and clients
         # random_bytes = os.urandom(64)
         # random_bytes_str = base64.b64encode(random_bytes).decode('ascii')
-        random_bytes_str = "r0sdTz/eXbBDsPpB9QiB4P+ejll9juZdbYa4Xt+OZbFlV/n7FUcTMas64getSoWMoV5hE+UmiR6W554xa4SPnQ=="
-        print("random_bytes_str = " + random_bytes_str)
-
-        self.zkp_client.initialize_from_seed(random_bytes_str)
-
+        # random_bytes_str = "r0sdTz/eXbBDsPpB9QiB4P+ejll9juZdbYa4Xt+OZbFlV/n7FUcTMas64getSoWMoV5hE+UmiR6W554xa4SPnQ=="
+        # print("random_bytes_str = " + random_bytes_str)
+        self.random_bytes_str = receive_string(self.sock)
+        self.zkp_client.initialize_from_seed(self.random_bytes_str)
+        print("received random_bytes_str from server")
         print("init zkp_client success")
 
     def start(self) -> None:
@@ -165,8 +167,6 @@ def run(
     client = Client(global_rank=device_id)
     client.start()
 
-    client.init_zkp_client(args)
-
     # if args.gpu_id:
     #     torch.cuda.set_device(args.gpu_id)
     device = 'cuda' if args.gpu else 'cpu'
@@ -182,12 +182,14 @@ def run(
 
     elif args.model == 'mlp':
         # Multi-layer preceptron
-        img_size = train_dataset[0][0].shape
-        print("img_size = ", img_size)
-        len_in = 1
-        for x in img_size:
-            len_in *= x
-            global_model = MLP_Bank(dim_in=len_in, dim_hidden=64, dim_out=args.num_classes)
+        # img_size = train_dataset[0][0].shape
+        # print("img_size = ", img_size)
+        # print(f"img_size.type: {type(img_size)}")
+        # for x in img_size:
+        #    len_in *= x
+        #    global_model = MLP_Bank(dim_in=len_in, dim_hidden=64, dim_out=args.num_classes)
+        len_in = args.num_features
+        global_model = MLP_Bank(dim_in=len_in, dim_hidden=64, dim_out=args.num_classes)
     else:
         exit('Error: unrecognized model')
 
@@ -199,6 +201,8 @@ def run(
     # copy weights
     global_weights = global_model.state_dict()
     client.weights = global_weights
+
+    client.init_zkp_client(args, global_model)
 
     # Training
     train_loss, train_accuracy = [], []
@@ -231,8 +235,19 @@ def run(
         flatten_weights = flatten_weights.tolist()
         print(f"****** flatten_weights.type: {type(flatten_weights)}")
         print(f"****** flatten_weights.length: {len(flatten_weights)}")
+        # print("flatten_weights: ", flatten_weights)
+
+        # for testing the correctness of summation when dim = 2
+        # weight_updates_collection = [[0, 0], [0.09574025869369507, -0.0437011756002903],
+        #                             [-0.012869355268776417, 0.0022518674377352],
+        #                             [-0.07237587869167328, 0.12259631603956223]]
+        weight_updates_collection = np.random.rand(4, 31)
+        weight_updates_collection = weight_updates_collection.tolist()
+        print(f"weight_update_collection.type: {type(weight_updates_collection[1])}")
+        print(weight_updates_collection[client.global_rank + 1])
         # print(f"flatten_weights: {flatten_weights}")
-        converted_weights = risefl_interface.VecFloat(flatten_weights)
+        # converted_weights = risefl_interface.VecFloat(flatten_weights)
+        converted_weights = risefl_interface.VecFloat(weight_updates_collection[client.global_rank + 1])
         client_send_str1 = client.zkp_client.send_1(client.check_param, converted_weights)
         # send this string to the server
         send_string(client.sock, client_send_str1)

@@ -179,6 +179,15 @@ def unpack_flatten_model_weights(model, flattened_weights):
     return state_dict
 
 
+def flattened_weight_size(model):
+    weight_size = 0
+    state_dict = model.state_dict()
+    for key, value in state_dict.items():
+        size = np.prod(value.size())
+        weight_size += size
+    return weight_size
+
+
 def parseargs(arg=None) -> argparse.Namespace:
     """Parse command line arguments
 
@@ -187,42 +196,23 @@ def parseargs(arg=None) -> argparse.Namespace:
     """
 
     parser = argparse.ArgumentParser(description="Training using the autograd and graph.")
-    parser.add_argument(
-        "--model", choices=["cnn", "resnet", "xceptionnet", "mlp", "alexnet"], default="mlp"
-    )
+    parser.add_argument("--model", choices=["cnn", "resnet", "xceptionnet", "mlp", "alexnet"], default="mlp")
     parser.add_argument("--data", choices=["mnist", "cifar10", "cifar100", "bank"], default="mnist")
-    parser.add_argument(
-        "-m", "--max-epoch", default=10, type=int, help="maximum epochs", dest="max_epoch"
-    )
-    parser.add_argument(
-        "-b", "--batch-size", default=64, type=int, help="batch size", dest="batch_size"
-    )
-    parser.add_argument(
-        "-l", "--learning-rate", default=0.005, type=float, help="initial learning rate", dest="lr"
-    )
+    parser.add_argument("-m", "--max-epoch", default=10, type=int,
+                        help="maximum epochs", dest="max_epoch")
+    parser.add_argument("-b", "--batch-size", default=64, type=int,
+                        help="batch size", dest="batch_size")
+    parser.add_argument("-l", "--learning-rate", default=0.005, type=float,
+                        help="initial learning rate", dest="lr")
     # Determine which gpu to use
-    parser.add_argument(
-        "-i", "--device-id", default=0, type=int, help="which GPU to use", dest="device_id"
-    )
-    parser.add_argument(
-        "-g",
-        "--disable-graph",
-        default="True",
-        action="store_false",
-        help="disable graph",
-        dest="graph",
-    )
-    parser.add_argument(
-        "-v", "--log-verbosity", default=0, type=int, help="logging verbosity", dest="verbosity"
-    )
-    parser.add_argument(
-        "-d",
-        "--data-distribution",
-        choices=["iid", "non-iid"],
-        default="iid",
-        help="data distribution",
-        dest="data_dist",
-    )
+    parser.add_argument("-i", "--device-id", default=0, type=int,
+                        help="which GPU to use", dest="device_id")
+    parser.add_argument("-g", "--disable-graph", default="True", action="store_false",
+                        help="disable graph", dest="graph")
+    parser.add_argument("-v", "--log-verbosity", default=0, type=int,
+                        help="logging verbosity", dest="verbosity")
+    parser.add_argument("-d",  "--data-distribution", choices=["iid", "non-iid"],
+                        default="iid", help="data distribution", dest="data_dist")
     parser.add_argument('--momentum', type=float, default=0.5,
                         help='SGD momentum (default: 0.5)')
     parser.add_argument('--num_channels', type=int, default=1, help="number \
@@ -245,9 +235,12 @@ def parseargs(arg=None) -> argparse.Namespace:
     parser.add_argument("--port", default=1234)
 
     # parameters required by the zkp library
-    parser.add_argument("--max_malicious_clients", default=1, type=int, help="maximum number of malicious clients")
-    parser.add_argument("--num_blinds_per_group_element", default=1, type=int, help="number of blinds per group element")
-    parser.add_argument("--weight_bits", default=16, type=int, help="number of bits of weight updates")
+    parser.add_argument("--max_malicious_clients", default=1, type=int,
+                        help="maximum number of malicious clients")
+    parser.add_argument("--num_blinds_per_group_element", default=1, type=int,
+                        help="number of blinds per group element")
+    parser.add_argument("--weight_bits", default=16, type=int,
+                        help="number of bits of weight updates")
     parser.add_argument("--random_normal_bit_shifter", default=24, type=int,
                         help="random normal samples are multiplied by 2^random_normal_bit_shifter and "
                              "rounded to the nearest integer. The paper uses 24.")
@@ -262,10 +255,16 @@ def parseargs(arg=None) -> argparse.Namespace:
     parser.add_argument("--check_type", default=0, type=int,
                         help="the type of the check method. Supported: l2 norm check 0, "
                              "sphere check 1, cosine similarity check 2")
-    parser.add_argument("--norm_bound", default=2.0, type=float, help="the norm bound of each client's update")
-    parser.add_argument("--b_precomp", default=False, type=bool, help="whether store the precomputed group elements")
+    parser.add_argument("--norm_bound", default=2.0, type=float,
+                        help="the norm bound of each client's update")
+    parser.add_argument("--b_precomp", default=False, type=bool,
+                        help="whether store the precomputed group elements")
     # TODO: this parameter shall be inferred based on the model selected, not given by argument
-    parser.add_argument("--dim", default=4746, type=int, help="the dimension of the model")
+    # parser.add_argument("--dim", default=4746, type=int, help="the dimension of the model")
+    parser.add_argument("--dim", default=31, type=int,
+                        help="the dimension of the model")
+    parser.add_argument("--num_features", default=63, type=int,
+                        help="the number of features")
 
     args = parser.parse_args(arg)
     return args

@@ -10,7 +10,8 @@ import risefl_interface
 
 from .proto import interface_pb2 as proto
 from .utils import (parseargs, receive_int, receive_all, receive_message, send_message, send_int,
-                    serialize_tensor, deserialize_tensor, check_defense_type, send_string, receive_string, unpack_flatten_model_weights)
+                    serialize_tensor, deserialize_tensor, check_defense_type, send_string,
+                    receive_string, unpack_flatten_model_weights, flattened_weight_size)
 from .models import MLP_Bank, CNNMnist
 import os
 import base64
@@ -57,6 +58,7 @@ class Server:
 
         self.zkp_server = None
         self.check_param = None
+        self.random_bytes_str = None
 
     def __start_connection(self) -> None:
         """Start the network connection of server."""
@@ -75,7 +77,7 @@ class Server:
 
         assert None not in self.conns
 
-    def init_server_zkp(self, args) -> None:
+    def init_server_zkp(self, args, global_model) -> None:
         """Initialize server zkp"""
         defense_type = check_defense_type(args.check_type)
 
@@ -83,21 +85,18 @@ class Server:
         self.check_param = risefl_interface.CheckParamFloat(defense_type)
         self.check_param.l2_param.bound = args.norm_bound
 
+        dim = int(flattened_weight_size(global_model))
+        print("dim = ", dim)
+        print(f"dim.type: {type(dim)}")
+
         # initialize server
         self.zkp_server = risefl_interface.ServerInterface(
-            args.num_clients, args.max_malicious_clients, args.dim,
+            args.num_clients, args.max_malicious_clients, dim,
             args.num_blinds_per_group_element, args.weight_bits, args.random_normal_bit_shifter,
             args.num_norm_bound_samples, args.inner_prod_bound_bits, args.max_bound_sq_bits,
             defense_type, False)
 
-        # TODO: need to broadcast random_bytes_str to all clients
-        # a random string used to generate independent group elements, to be used by both the server and clients
-        # random_bytes = os.urandom(64)
-        # random_bytes_str = base64.b64encode(random_bytes).decode('ascii')
-        random_bytes_str = "r0sdTz/eXbBDsPpB9QiB4P+ejll9juZdbYa4Xt+OZbFlV/n7FUcTMas64getSoWMoV5hE+UmiR6W554xa4SPnQ=="
-        print("random_bytes_str = " + random_bytes_str)
-
-        self.zkp_server.initialize_from_seed(random_bytes_str)
+        self.zkp_server.initialize_from_seed(self.random_bytes_str)
 
     def start(self) -> None:
         """Start the server.
@@ -204,9 +203,19 @@ if __name__ == "__main__":
         send_string(server.conns[i], sign_prv_keys_vec_i_str)
         # print("send")
 
-    print(f"****** assign pub and prv keys finisehd")
+    print(f"****** assign pub and prv keys finished")
 
-    server.init_server_zkp(args)
+    # a random string used to generate independent group elements, to be used by both the server and clients
+    random_bytes = os.urandom(64)
+    random_bytes_str = base64.b64encode(random_bytes).decode('ascii')
+    # random_bytes_str = "r0sdTz/eXbBDsPpB9QiB4P+ejll9juZdbYa4Xt+OZbFlV/n7FUcTMas64getSoWMoV5hE+UmiR6W554xa4SPnQ=="
+    print("random_bytes_str = " + random_bytes_str)
+    server.random_bytes_str = random_bytes_str
+
+    for i in range(args.num_clients):
+        send_string(server.conns[i], random_bytes_str)
+
+    print(f"****** send random_bytes_str finished")
 
     # BUILD MODEL
     if args.model == 'cnn':
@@ -217,13 +226,17 @@ if __name__ == "__main__":
     elif args.model == 'mlp':
         # Multi-layer preceptron
         # TODO: need to get from argument or client
-        img_size = torch.Size([1, 63])
-        len_in = 1
-        for x in img_size:
-            len_in *= x
-            global_model = MLP_Bank(dim_in=len_in, dim_hidden=64, dim_out=args.num_classes)
+        # img_size = torch.Size([1, 63])
+        # len_in = 1
+        # for x in img_size:
+        #    len_in *= x
+        #    global_model = MLP_Bank(dim_in=len_in, dim_hidden=64, dim_out=args.num_classes)
+        len_in = args.num_features
+        global_model = MLP_Bank(dim_in=len_in, dim_hidden=64, dim_out=args.num_classes)
     else:
         exit('Error: unrecognized model')
+
+    server.init_server_zkp(args, global_model)
 
     for i in range(args.max_epoch):
         print(f"On epoch {i}:")
@@ -319,6 +332,10 @@ if __name__ == "__main__":
         server.zkp_server.finish_iteration()
 
         print("****** server finish iteration")
+
+        print("****** server.zkp_server.final_update_float: ")
+        for j in range(args.dim):
+            print("j = " + str(j) + ", server.zkp_server.final_update_float[j] = " + str(server.zkp_server.final_update_float[j]))
 
         # reconstruct the flattened weights to tensors and assign to server.weights
         print(f"****** final_update.type: {type(server.zkp_server.final_update_float)}")
