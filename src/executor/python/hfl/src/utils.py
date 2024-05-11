@@ -133,6 +133,14 @@ def deserialize_tensor(t: bytes) -> torch.tensor:
 
 
 def check_defense_type(check_type) -> int:
+    """check the zkp defense type.
+
+    Args:
+        check_type: input argument
+
+    Returns:
+        the defense type in the zkp library
+    """
     defense_type = 0
     if check_type == 0:
         defense_type = risefl_interface.CHECK_TYPE_L2NORM
@@ -146,21 +154,35 @@ def check_defense_type(check_type) -> int:
 
 
 def flatten_model_weights(model_weights):
-    # Get the model parameters as a dictionary
-    # state_dict = model.state_dict()
+    """flatten the model weights to 1 dimension ndarray.
 
+    Args:
+        model_weights (torch tensor): the model weights
+
+    Returns:
+        the flattened model weights (numpy.ndarray)
+    """
     # Flatten all parameters into a 1D array
-    flattened_weights = np.concatenate([p.flatten().cpu().numpy() for p in model_weights.values()])
+    flattened_weights = np.concatenate([p.flatten().cpu().numpy()
+                                        for p in model_weights.values()])
     return flattened_weights
 
 
 def unpack_flatten_model_weights(model, flattened_weights):
+    """reconstruct the flattened model weights to the original structure.
+
+    Args:
+        model: the created model architecture
+        flattened_weights (numpy.ndarray): the flattened model weights
+
+    Returns:
+        the reconstructed model weights (torch.tensor)
+    """
     # Get the model parameters as a dictionary
     state_dict = model.state_dict()
 
     # Start index to keep track of the current position in the flattened array
     start_index = 0
-
     # Loop through the parameters in the state dict
     for key, value in state_dict.items():
         # Calculate the size of the parameter tensor
@@ -175,11 +197,18 @@ def unpack_flatten_model_weights(model, flattened_weights):
         start_index += size
 
     # Load the state dict into the model
-    # model.load_state_dict(state_dict)
     return state_dict
 
 
 def flattened_weight_size(model):
+    """the model weight size after flattening
+
+    Args:
+        model: the created model architecture
+
+    Returns:
+        the size of the flattened weights (numpy.int)
+    """
     weight_size = 0
     state_dict = model.state_dict()
     for key, value in state_dict.items():
@@ -259,12 +288,11 @@ def parseargs(arg=None) -> argparse.Namespace:
                         help="the norm bound of each client's update")
     parser.add_argument("--b_precomp", default=False, type=bool,
                         help="whether store the precomputed group elements")
-    # TODO: this parameter shall be inferred based on the model selected, not given by argument
-    # parser.add_argument("--dim", default=4746, type=int, help="the dimension of the model")
-    parser.add_argument("--dim", default=31, type=int,
-                        help="the dimension of the model")
     parser.add_argument("--num_features", default=63, type=int,
                         help="the number of features")
+    # this param is kept for debug
+    parser.add_argument("--dim", default=31, type=int,
+                        help="the dimension of the model")
 
     args = parser.parse_args(arg)
     return args

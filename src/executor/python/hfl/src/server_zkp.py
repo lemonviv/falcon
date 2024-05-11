@@ -64,7 +64,7 @@ class Server:
         """Start the network connection of server."""
         self.sock.bind((self.host, self.port))
         self.sock.listen()
-        print("Server started.")
+        print("[server_zkp.__start_connection] Server started.")
 
     def __start_rank_pairing(self) -> None:
         """Start pair each client to a global rank"""
@@ -73,7 +73,7 @@ class Server:
             rank = receive_int(conn)
             self.conns[rank] = conn
             self.addrs[rank] = addr
-            print(f"[Server] Connected by {addr} [global_rank {rank}]")
+            print(f"[server_zkp.__start_rank_pairing] Connected by {addr} [global_rank {rank}]")
 
         assert None not in self.conns
 
@@ -86,8 +86,7 @@ class Server:
         self.check_param.l2_param.bound = args.norm_bound
 
         dim = int(flattened_weight_size(global_model))
-        print("dim = ", dim)
-        print(f"dim.type: {type(dim)}")
+        print("****** [server_zkp.init_server_zkp] dim = ", dim)
 
         # initialize server
         self.zkp_server = risefl_interface.ServerInterface(
@@ -203,19 +202,19 @@ if __name__ == "__main__":
         send_string(server.conns[i], sign_prv_keys_vec_i_str)
         # print("send")
 
-    print(f"****** assign pub and prv keys finished")
+    print(f"****** [server_zkp.main] assign pub and prv keys finished")
 
     # a random string used to generate independent group elements, to be used by both the server and clients
     random_bytes = os.urandom(64)
     random_bytes_str = base64.b64encode(random_bytes).decode('ascii')
     # random_bytes_str = "r0sdTz/eXbBDsPpB9QiB4P+ejll9juZdbYa4Xt+OZbFlV/n7FUcTMas64getSoWMoV5hE+UmiR6W554xa4SPnQ=="
-    print("random_bytes_str = " + random_bytes_str)
+    print("****** [server_zkp.main] random_bytes_str = " + random_bytes_str)
     server.random_bytes_str = random_bytes_str
 
     for i in range(args.num_clients):
         send_string(server.conns[i], random_bytes_str)
 
-    print(f"****** send random_bytes_str finished")
+    print(f"****** [server_zkp.main] send random_bytes_str finished")
 
     # BUILD MODEL
     if args.model == 'cnn':
@@ -224,17 +223,11 @@ if __name__ == "__main__":
             global_model = CNNMnist(num_channels=args.num_channels, num_classes=args.num_classes)
 
     elif args.model == 'mlp':
-        # Multi-layer preceptron
-        # TODO: need to get from argument or client
-        # img_size = torch.Size([1, 63])
-        # len_in = 1
-        # for x in img_size:
-        #    len_in *= x
-        #    global_model = MLP_Bank(dim_in=len_in, dim_hidden=64, dim_out=args.num_classes)
+        # Multi-layer perceptron
         len_in = args.num_features
         global_model = MLP_Bank(dim_in=len_in, dim_hidden=64, dim_out=args.num_classes)
     else:
-        exit('Error: unrecognized model')
+        exit('****** [server_zkp.main] Error: unrecognized model')
 
     server.init_server_zkp(args, global_model)
 
@@ -242,9 +235,9 @@ if __name__ == "__main__":
         print(f"On epoch {i}:")
         if i > 0:
             # Push to Clients
-            print(f"****** Server push weights to clients start")
+            print(f"****** [server_zkp.main] Server push weights to clients start")
             server.push()
-            print(f"****** Server push weights to clients done")
+            print(f"****** [server_zkp.main] Server push weights to clients done")
 
         # Collects from Clients
         # print(f"Server pull weights from clients start")
@@ -254,7 +247,7 @@ if __name__ == "__main__":
         # add the following to the iterations
         server.zkp_server.initialize_new_iteration(server.check_param)
 
-        print("****** server initialize new iteration finished")
+        print("****** [server_zkp.main] server initialize new iteration finished")
 
         # step 1 receive messages from all clients
         for i in range(args.num_clients):
@@ -262,7 +255,7 @@ if __name__ == "__main__":
             client_send_str1_i = receive_string(server.conns[i])
             server.zkp_server.receive_1(client_send_str1_i, i + 1)
 
-        print("****** server step 1 finished")
+        print("****** [server_zkp.main] server step 1 finished")
 
         # step 2 send messages to all clients and receive messages from all clients
         bytes_sent_2 = server.zkp_server.send_2()
@@ -270,7 +263,7 @@ if __name__ == "__main__":
             # broadcast the message
             send_string(server.conns[i], bytes_sent_2)
 
-        print("****** server step 2 -- send string finished")
+        print("****** [server_zkp.main] server step 2 -- send string finished")
 
         # what is the difference with two loops and one loop
         for i in range(args.num_clients):
@@ -278,7 +271,7 @@ if __name__ == "__main__":
             client_send_str2_i = receive_string(server.conns[i])
             server.zkp_server.receive_2(client_send_str2_i, i + 1)
 
-        print("****** server step 2 -- receive string finished")
+        print("****** [server_zkp.main] server step 2 -- receive string finished")
 
         # step 3 send messages to all clients and receive messages
         server.zkp_server.concurrent_process_before_send_3()
@@ -287,14 +280,14 @@ if __name__ == "__main__":
             # send the string to client i
             send_string(server.conns[i], server_send_3_str)
 
-        print("****** server step 3 -- send string finished")
+        print("****** [server_zkp.main] server step 3 -- send string finished")
 
         for i in range(args.num_clients):
             # receive str from client i
             client_send_str3_i = receive_string(server.conns[i])
             server.zkp_server.receive_3(client_send_str3_i, i + 1)
 
-        print("****** server step 3 -- receive string finished")
+        print("****** [server_zkp.main] server step 3 -- receive string finished")
 
         # step 4 send messages to all clients and receive
         server.zkp_server.process_before_send_4()
@@ -303,14 +296,14 @@ if __name__ == "__main__":
             # send string to client i
             send_string(server.conns[i], server_send_4_str)
 
-        print("****** server step 4 -- send string finished")
+        print("****** [server_zkp.main] server step 4 -- send string finished")
 
         for i in range(args.num_clients):
             # receive string from client i
             client_send_str4 = receive_string(server.conns[i])
             server.zkp_server.receive_4(client_send_str4, i + 1)
 
-        print("****** server step 4 -- receive string finished")
+        print("****** [server_zkp.main] server step 4 -- receive string finished")
 
         # step 5 send messages to all clients and receive
         server.zkp_server.process_before_send_5()
@@ -319,26 +312,27 @@ if __name__ == "__main__":
             # send string to client i
             send_string(server.conns[i], server_send_5_str)
 
-        print("****** server step 5 -- send string finished")
+        print("****** [server_zkp.main] server step 5 -- send string finished")
 
         for i in range(args.num_clients):
             # receive string from client i
             client_send_str5 = receive_string(server.conns[i])
             server.zkp_server.receive_5(client_send_str5, i + 1)
 
-        print("****** server step 5 -- receive string finished")
+        print("****** [server_zkp.main] server step 5 -- receive string finished")
 
         # finish one iteration
         server.zkp_server.finish_iteration()
 
-        print("****** server finish iteration")
+        print("****** [server_zkp.main] server finish iteration")
 
-        print("****** server.zkp_server.final_update_float: ")
-        for j in range(args.dim):
-            print("j = " + str(j) + ", server.zkp_server.final_update_float[j] = " + str(server.zkp_server.final_update_float[j]))
+        # print("****** [server_zkp.main] server.zkp_server.final_update_float: ")
+        # for j in range(args.dim):
+        #    print("j = " + str(j) + ", server.zkp_server.final_update_float[j] = "
+        #    + str(server.zkp_server.final_update_float[j]))
 
         # reconstruct the flattened weights to tensors and assign to server.weights
-        print(f"****** final_update.type: {type(server.zkp_server.final_update_float)}")
+        print(f"****** [server_zkp.main] final_update.type: {type(server.zkp_server.final_update_float)}")
         final_update_float_ndarray = np.array(server.zkp_server.final_update_float)
         weights = unpack_flatten_model_weights(global_model, final_update_float_ndarray)
         server.weights = weights
