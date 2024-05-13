@@ -227,7 +227,7 @@ def parseargs(arg=None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Training using the autograd and graph.")
     parser.add_argument("--model", choices=["cnn", "resnet", "xceptionnet", "mlp", "alexnet"], default="mlp")
     parser.add_argument("--data", choices=["mnist", "cifar10", "cifar100", "bank"], default="mnist")
-    parser.add_argument("-m", "--max-epoch", default=10, type=int,
+    parser.add_argument("-m", "--max-epoch", default=3, type=int,
                         help="maximum epochs", dest="max_epoch")
     parser.add_argument("-b", "--batch-size", default=64, type=int,
                         help="batch size", dest="batch_size")
@@ -284,7 +284,7 @@ def parseargs(arg=None) -> argparse.Namespace:
     parser.add_argument("--check_type", default=0, type=int,
                         help="the type of the check method. Supported: l2 norm check 0, "
                              "sphere check 1, cosine similarity check 2")
-    parser.add_argument("--norm_bound", default=2.0, type=float,
+    parser.add_argument("--norm_bound", default=10.0, type=float,
                         help="the norm bound of each client's update")
     parser.add_argument("--b_precomp", default=False, type=bool,
                         help="whether store the precomputed group elements")

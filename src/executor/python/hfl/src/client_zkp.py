@@ -150,19 +150,7 @@ class Client:
         utils.send_message(self.sock, message)
 
 
-def run(
-        args,
-        global_rank,
-        world_size,
-        device_id,
-        max_epoch,
-        batch_size,
-        model,
-        data,
-        data_dist,
-        verbosity,
-        spars=None
-):
+def run(args, device_id):
     # Connect to server
     client = Client(global_rank=device_id)
     client.start()
@@ -203,12 +191,7 @@ def run(
 
     for epoch in tqdm(range(args.max_epoch)):
         # local_weights, local_losses = [], []
-        print(f'\n | Global Training Round : {epoch+1} |\n')
-
-        if epoch > 0:
-            print(f"****** [client_zkp.run] client begins to pull weights from server")
-            client.pull()
-            print(f"****** [client_zkp.run] client finishes pulling weights from server")
+        print(f'\n | Global Training Round : {epoch} |\n')
 
         global_model.load_state_dict(client.weights)
 
@@ -226,6 +209,8 @@ def run(
         print(f"****** [client_zkp.run] client.weights.type: {type(client.weights)}")
         # print("client.weights: ", client.weights)
         flatten_weights = flatten_model_weights(w)
+        # clip the weight by norm_bound, otherwise, will get error when the server aggregates
+        flatten_weights *= args.norm_bound / np.linalg.norm(flatten_weights)
         flatten_weights = flatten_weights.tolist()
         print(f"****** [client_zkp.run] flatten_weights.type: {type(flatten_weights)}")
         print(f"****** [client_zkp.run] flatten_weights.length: {len(flatten_weights)}")
@@ -257,7 +242,6 @@ def run(
         print("****** [client_zkp.run] client_sends_str2 finished")
 
         # step 3 receive message from the server and sends message back to the server
-        # receive message from server
         server_sent_3_str = receive_string(client.sock)
         client_send_str3 = client.zkp_client.receive_and_send_3(server_sent_3_str)
         send_string(client.sock, client_send_str3)
@@ -265,7 +249,6 @@ def run(
         print("****** [client_zkp.run] client_sends_str3 finished")
 
         # step 4 receive message from the server and sends message back to the server
-        # receive message from server
         server_sent_4_str = receive_string(client.sock)
         client_send_str4 = client.zkp_client.receive_and_send_4(server_sent_4_str)
         send_string(client.sock, client_send_str4)
@@ -273,24 +256,22 @@ def run(
         print("****** [client_zkp.run] client_sends_str4 finished")
 
         # step 5 receive message from the server and sends message back to the server
-        # receive message from server
         server_sent_5_str = receive_string(client.sock)
         client_send_str5 = client.zkp_client.receive_and_send_5(server_sent_5_str)
         send_string(client.sock, client_send_str5)
 
         print("****** [client_zkp.run] client_sends_str5 finished")
 
-        # make changes in local_model
-
-        # client.push()
-        # print(f"client pushed weights to server")
+        # pull the latest round of model weights
+        client.pull()
+        print(f"****** [client_zkp.run] client finishes pulling weights from server")
 
         local_model = LocalUpdate(args=args, dataset=train_dataset)
         acc, loss = local_model.inference(model=global_model)
         train_accuracy.append(acc)
         train_loss.append(loss)
-        print("|---- Train Accuracy: {:.2f}%".format(100*acc))
-        print("|---- Train Loss: {:.2f}".format(loss))
+        print("|---- [client_zkp.run] Train Accuracy: {:.2f}%".format(100*acc))
+        print("|---- [client_zkp.run] Train Loss: {:.2f}".format(loss))
 
     print(f"****** [client_zkp.run] Train Accuracy: {train_accuracy}")
     print(f"****** [client_zkp.run] Train Loss: {train_loss}")
@@ -299,25 +280,12 @@ def run(
     test_acc, test_loss = test_inference(args, global_model, test_dataset)
 
     print(f' \n Results after {args.max_epoch} global rounds of training:')
-    print("|---- Test Accuracy: {:.2f}%".format(100*test_acc))
-    print("|---- Test Loss: {:.2f}".format(test_loss))
+    print("|---- [client_zkp.run] Test Accuracy: {:.2f}%".format(100*test_acc))
+    print("|---- [client_zkp.run] Test Loss: {:.2f}".format(test_loss))
 
     client.close()
 
 
 if __name__ == "__main__":
     args = parseargs()
-    # sgd = opt.SGD(lr=args.lr, momentum=0.9, weight_decay=1e-5, dtype=singa_dtype[args.precision])
-
-    run(
-        args,
-        0,
-        1,
-        args.device_id,
-        args.max_epoch,
-        args.batch_size,
-        args.model,
-        args.data,
-        args.data_dist,
-        args.verbosity
-    )
+    run(args, args.device_id)

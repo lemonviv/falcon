@@ -124,17 +124,6 @@ class Server:
             self.weights[k] = sum(v) / self.num_clients
         return self.weights
 
-    # def average_weights(w):
-    #     """
-    #     Returns the average of the weights.
-    #     """
-    #     w_avg = copy.deepcopy(w[0])
-    #     for key in w_avg.keys():
-    #         for i in range(1, len(w)):
-    #             w_avg[key] += w[i][key]
-    #         w_avg[key] = torch.div(w_avg[key], len(w))
-    #     return w_avg
-
     def pull(self) -> None:
         """Server pull weights from clients.
 
@@ -233,16 +222,6 @@ if __name__ == "__main__":
 
     for i in range(args.max_epoch):
         print(f"On epoch {i}:")
-        if i > 0:
-            # Push to Clients
-            print(f"****** [server_zkp.main] Server push weights to clients start")
-            server.push()
-            print(f"****** [server_zkp.main] Server push weights to clients done")
-
-        # Collects from Clients
-        # print(f"Server pull weights from clients start")
-        # server.pull()
-        # print(f"Server pull weights from clients done")
 
         # add the following to the iterations
         server.zkp_server.initialize_new_iteration(server.check_param)
@@ -327,14 +306,19 @@ if __name__ == "__main__":
         print("****** [server_zkp.main] server finish iteration")
 
         # print("****** [server_zkp.main] server.zkp_server.final_update_float: ")
-        # for j in range(args.dim):
-        #    print("j = " + str(j) + ", server.zkp_server.final_update_float[j] = "
-        #    + str(server.zkp_server.final_update_float[j]))
+        # for j in range(len(server.zkp_server.final_update_float)):
+        #    if j < 10:
+        #        print("j = " + str(j) + ", server.zkp_server.final_update_float[j] = "
+        #              + str(server.zkp_server.final_update_float[j]))
 
         # reconstruct the flattened weights to tensors and assign to server.weights
         print(f"****** [server_zkp.main] final_update.type: {type(server.zkp_server.final_update_float)}")
         final_update_float_ndarray = np.array(server.zkp_server.final_update_float)
         weights = unpack_flatten_model_weights(global_model, final_update_float_ndarray)
         server.weights = weights
+
+        # push the updated weights to the clients
+        server.push()
+        print(f"****** [server_zkp.main] Server push weights to clients done")
 
     server.close()
