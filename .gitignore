@@ -154,4 +154,5 @@ data/dataset/breast_cancer_data/client0/log_reg/
 data/dataset/breast_cancer_data/client1/log_reg/
 data/dataset/breast_cancer_data/client2/log_reg/
 
-python/data/
+src/executor/python/data/bank/
+src/executor/python/data/mnist/

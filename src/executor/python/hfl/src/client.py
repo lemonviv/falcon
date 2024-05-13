@@ -3,7 +3,8 @@
 import socket
 
 from .proto import interface_pb2 as proto
-from .utils import parseargs, get_dataset
+from .utils import parseargs
+from .dataset.data_loader import get_dataset
 
 import numpy as np
 
@@ -93,50 +94,6 @@ class Client:
         for k, v in self.weights.items():
             message.weights[k] = utils.serialize_tensor(v)
         utils.send_message(self.sock, message)
-
-
-# Calculate accuracy
-def accuracy(pred, target):
-    # y is network output to be compared with ground truth (int)
-    y = np.argmax(pred, axis=1)
-    a = y == target
-    correct = np.array(a, "int").sum()
-    return correct
-
-
-# Data partition according to the rank
-def partition(global_rank, world_size, train_x, train_y, val_x, val_y):
-    # Partition training data
-    data_per_rank = train_x.shape[0] // world_size
-    idx_start = global_rank * data_per_rank
-    idx_end = (global_rank + 1) * data_per_rank
-    train_x = train_x[idx_start:idx_end]
-    train_y = train_y[idx_start:idx_end]
-
-    # Partition evaluation data
-    data_per_rank = val_x.shape[0] // world_size
-    idx_start = global_rank * data_per_rank
-    idx_end = (global_rank + 1) * data_per_rank
-    val_x = val_x[idx_start:idx_end]
-    val_y = val_y[idx_start:idx_end]
-    return train_x, train_y, val_x, val_y
-
-
-
-def get_data(data, data_dist="iid", device_id=None):
-    if data == "bank":
-        train_x, train_y, val_x, val_y, num_classes = bank.load(device_id)
-    else:
-        raise NotImplementedError
-    return train_x, train_y, val_x, val_y, num_classes
-
-
-def get_model(model, num_channels=None, num_classes=None, data_size=None):
-    if model == "mlp":
-        model = MLP_Bank(dim_in=data_size, dim_hidden=64, dim_out=num_classes)
-    else:
-        raise NotImplementedError
-    return model
 
 
 def run(

@@ -5,15 +5,10 @@ import socket
 import struct
 
 import torch
-from google.protobuf.message import Message
-from torch import tensor
-from .sampling import mnist_iid, mnist_noniid, mnist_noniid_unequal
-from .sampling import cifar_iid, cifar_noniid
-from torchvision import datasets, transforms
-from torch.utils.data import Dataset, DataLoader
-import pandas as pd
-from sklearn.preprocessing import MinMaxScaler
 import numpy as np
+from google.protobuf.message import Message
+
+import risefl_interface
 
 
 def receive_all(conn: socket.socket, size: int) -> bytes:
@@ -95,6 +90,23 @@ def receive_message(conn: socket.socket, data: Message, pack_format: str = "Q") 
     return data
 
 
+def send_string(conn: socket.socket, data: str) -> None:
+    data_bytes = data.encode()
+    data_bytes_len = len(data_bytes)
+    send_int(conn, data_bytes_len)
+    conn.sendall(data_bytes)
+
+
+def receive_string(conn: socket.socket) -> str:
+    data_len = receive_int(conn)
+    print("****** [utils.receive_string] data_len = ", data_len)
+    data = receive_all(conn, data_len)
+    # print("received_string_bytes = ", data)
+    data_str = data.decode()
+    # print("data_str = ", data_str)
+    return data_str
+
+
 def serialize_tensor(t: torch.tensor) -> bytes:
     """Serialize a torch tensor to bytes.
 
@@ -120,74 +132,89 @@ def deserialize_tensor(t: bytes) -> torch.tensor:
     return torch.from_numpy(pickle.loads(t))
 
 
-class CustomDataset(Dataset):
-    def __init__(self, file_path, transform=None):
-        self.data = pd.read_csv(file_path)
-        print("self.data shape:", self.data.shape)
-        self.transform = transform
+def check_defense_type(check_type) -> int:
+    """check the zkp defense type.
 
-    def __len__(self):
-        return len(self.data)
+    Args:
+        check_type: input argument
 
-    def __getitem__(self, idx):
-        label = self.data.iloc[idx, -1]
-        # print(f"label: {label}")
-        # print(f"type of label: {type(label)}")
-        sample = self.data.iloc[idx, :-1].values
-        # print(f"sample before transform: {sample}")
-        # print(f"type of sample: {type(sample)}")
-        sample_float = sample.astype(np.float32)
-        # print(f"sample_float before transform: {sample_float}")
-        # print(f"type of sample_float: {type(sample_float)}")
-        if self.transform:
-            sample_float = sample_float.reshape(1, -1)
-            sample_float = self.transform(sample_float)
-        return (sample_float, label)
-
-
-class MinMaxScaleTransform:
-    def __init__(self):
-        self.scaler = MinMaxScaler()
-
-    def __call__(self, sample):
-        # sample is assumed to be a NumPy array or a PyTorch tensor
-        if isinstance(sample, torch.Tensor):
-            sample = sample.numpy()  # Convert tensor to NumPy array
-        scaled_sample = self.scaler.fit_transform(sample)
-        return torch.from_numpy(scaled_sample)  # Convert NumPy array back to tensor
-
-
-def get_dataset(data, data_dir, client_id):
+    Returns:
+        the defense type in the zkp library
     """
-    Returns train and test datasets.
+    defense_type = 0
+    if check_type == 0:
+        defense_type = risefl_interface.CHECK_TYPE_L2NORM
+    elif check_type == 1:
+        defense_type = risefl_interface.CHECK_TYPE_SPHERE
+    elif check_type == 2:
+        defense_type = risefl_interface.CHECK_TYPE_COSINE_SIM
+    else:
+        raise ValueError("Unsupported defense type!")
+    return defense_type
+
+
+def flatten_model_weights(model_weights):
+    """flatten the model weights to 1 dimension ndarray.
+
+    Args:
+        model_weights (torch tensor): the model weights
+
+    Returns:
+        the flattened model weights (numpy.ndarray)
     """
+    # Flatten all parameters into a 1D array
+    flattened_weights = np.concatenate([p.flatten().cpu().numpy()
+                                        for p in model_weights.values()])
+    return flattened_weights
 
-    if data == 'bank':
-        apply_transform = MinMaxScaleTransform()
-        # apply_transform = transforms.Compose([
-        #    transforms.ToTensor(), MinMaxScaleTransform()])
-        train_dataset = CustomDataset(data_dir + "/bank_train_" + str(client_id) + ".csv",
-                                      transform=apply_transform)
-        test_dataset = CustomDataset(data_dir + "/bank_test_" + str(client_id) + ".csv",
-                                      transform=apply_transform)
 
-    elif data == 'mnist' or 'fmnist':
-        # if data == 'mnist':
-        #    data_dir = '../data/mnist/'
-        # else:
-        #    data_dir = '../data/fmnist/'
+def unpack_flatten_model_weights(model, flattened_weights):
+    """reconstruct the flattened model weights to the original structure.
 
-        apply_transform = transforms.Compose([
-            transforms.ToTensor(),
-            transforms.Normalize((0.1307,), (0.3081,))])
+    Args:
+        model: the created model architecture
+        flattened_weights (numpy.ndarray): the flattened model weights
 
-        train_dataset = datasets.MNIST(data_dir, train=True, download=True,
-                                       transform=apply_transform)
+    Returns:
+        the reconstructed model weights (torch.tensor)
+    """
+    # Get the model parameters as a dictionary
+    state_dict = model.state_dict()
 
-        test_dataset = datasets.MNIST(data_dir, train=False, download=True,
-                                      transform=apply_transform)
+    # Start index to keep track of the current position in the flattened array
+    start_index = 0
+    # Loop through the parameters in the state dict
+    for key, value in state_dict.items():
+        # Calculate the size of the parameter tensor
+        size = np.prod(value.size())
+        # Extract the corresponding segment from the flattened array
+        param_data = flattened_weights[start_index:start_index+size]
+        # Reshape the data and convert it to a tensor
+        param_tensor = torch.tensor(param_data).reshape(value.size())
+        # Set the parameter tensor in the model's state dict
+        state_dict[key] = param_tensor
+        # Update the start index for the next parameter
+        start_index += size
 
-    return train_dataset, test_dataset
+    # Load the state dict into the model
+    return state_dict
+
+
+def flattened_weight_size(model):
+    """the model weight size after flattening
+
+    Args:
+        model: the created model architecture
+
+    Returns:
+        the size of the flattened weights (numpy.int)
+    """
+    weight_size = 0
+    state_dict = model.state_dict()
+    for key, value in state_dict.items():
+        size = np.prod(value.size())
+        weight_size += size
+    return weight_size
 
 
 def parseargs(arg=None) -> argparse.Namespace:
@@ -198,42 +225,23 @@ def parseargs(arg=None) -> argparse.Namespace:
     """
 
     parser = argparse.ArgumentParser(description="Training using the autograd and graph.")
-    parser.add_argument(
-        "--model", choices=["cnn", "resnet", "xceptionnet", "mlp", "alexnet"], default="mlp"
-    )
+    parser.add_argument("--model", choices=["cnn", "resnet", "xceptionnet", "mlp", "alexnet"], default="mlp")
     parser.add_argument("--data", choices=["mnist", "cifar10", "cifar100", "bank"], default="mnist")
-    parser.add_argument(
-        "-m", "--max-epoch", default=10, type=int, help="maximum epochs", dest="max_epoch"
-    )
-    parser.add_argument(
-        "-b", "--batch-size", default=64, type=int, help="batch size", dest="batch_size"
-    )
-    parser.add_argument(
-        "-l", "--learning-rate", default=0.005, type=float, help="initial learning rate", dest="lr"
-    )
+    parser.add_argument("-m", "--max-epoch", default=3, type=int,
+                        help="maximum epochs", dest="max_epoch")
+    parser.add_argument("-b", "--batch-size", default=64, type=int,
+                        help="batch size", dest="batch_size")
+    parser.add_argument("-l", "--learning-rate", default=0.005, type=float,
+                        help="initial learning rate", dest="lr")
     # Determine which gpu to use
-    parser.add_argument(
-        "-i", "--device-id", default=0, type=int, help="which GPU to use", dest="device_id"
-    )
-    parser.add_argument(
-        "-g",
-        "--disable-graph",
-        default="True",
-        action="store_false",
-        help="disable graph",
-        dest="graph",
-    )
-    parser.add_argument(
-        "-v", "--log-verbosity", default=0, type=int, help="logging verbosity", dest="verbosity"
-    )
-    parser.add_argument(
-        "-d",
-        "--data-distribution",
-        choices=["iid", "non-iid"],
-        default="iid",
-        help="data distribution",
-        dest="data_dist",
-    )
+    parser.add_argument("-i", "--device-id", default=0, type=int,
+                        help="which GPU to use", dest="device_id")
+    parser.add_argument("-g", "--disable-graph", default="True", action="store_false",
+                        help="disable graph", dest="graph")
+    parser.add_argument("-v", "--log-verbosity", default=0, type=int,
+                        help="logging verbosity", dest="verbosity")
+    parser.add_argument("-d",  "--data-distribution", choices=["iid", "non-iid"],
+                        default="iid", help="data distribution", dest="data_dist")
     parser.add_argument('--momentum', type=float, default=0.5,
                         help='SGD momentum (default: 0.5)')
     parser.add_argument('--num_channels', type=int, default=1, help="number \
@@ -251,9 +259,40 @@ def parseargs(arg=None) -> argparse.Namespace:
                         help="the number of local epochs: E")
     parser.add_argument('--local_bs', type=int, default=32,
                         help="local batch size: B")
-    parser.add_argument("--num_clients", default=10, type=int)
+    parser.add_argument("--num_clients", default=3, type=int)
     parser.add_argument("--host", default="127.0.0.1")
     parser.add_argument("--port", default=1234)
-    
+
+    # parameters required by the zkp library
+    parser.add_argument("--max_malicious_clients", default=1, type=int,
+                        help="maximum number of malicious clients")
+    parser.add_argument("--num_blinds_per_group_element", default=1, type=int,
+                        help="number of blinds per group element")
+    parser.add_argument("--weight_bits", default=16, type=int,
+                        help="number of bits of weight updates")
+    parser.add_argument("--random_normal_bit_shifter", default=24, type=int,
+                        help="random normal samples are multiplied by 2^random_normal_bit_shifter and "
+                             "rounded to the nearest integer. The paper uses 24.")
+    parser.add_argument("--num_norm_bound_samples", default=1000, type=int,
+                        help="number of multidimensional normal samples used in proving the l2 norm bound")
+    parser.add_argument("--inner_prod_bound_bits", default=44, type=int,
+                        help="the number of bits of each inner product between the model update and discretized "
+                             "multidimensional normal sample. Recommended: weight_bits + random_normal_bit_shifter + 4")
+    parser.add_argument("--max_bound_sq_bits", default=100, type=int,
+                        help="the maximum number of bits of the sum of squares of inner products. "
+                             "Recommended: 2 * (weight_bits + random_normal_bit_shifter) + 20")
+    parser.add_argument("--check_type", default=0, type=int,
+                        help="the type of the check method. Supported: l2 norm check 0, "
+                             "sphere check 1, cosine similarity check 2")
+    parser.add_argument("--norm_bound", default=10.0, type=float,
+                        help="the norm bound of each client's update")
+    parser.add_argument("--b_precomp", default=False, type=bool,
+                        help="whether store the precomputed group elements")
+    parser.add_argument("--num_features", default=63, type=int,
+                        help="the number of features")
+    # this param is kept for debug
+    parser.add_argument("--dim", default=31, type=int,
+                        help="the dimension of the model")
+
     args = parser.parse_args(arg)
     return args

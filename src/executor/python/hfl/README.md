@@ -21,7 +21,8 @@ Download the bank dataset and split it into 3 partitions.
 # 3. run the following command which:
 #    (1) splits the dataset into N subsets
 #    (2) splits each subsets into train set and test set (8:2)
-python -m bank N
+#    (3) puts the split sub-datasets to /FALCON_PATH/src/executor/python/data/bank/
+python3 -m bank N
 ```
 
 ## Run the example
@@ -29,15 +30,15 @@ python -m bank N
 Run the server first (set the number of epochs to 3)
 
 ```bash
-python -m src.server -m 3 --num_clients 3
+python3 -m src.server_zkp -m 3 --num_clients 3
 ```
 
 Then, start 3 clients in different terminal
 
 ```bash
-python -m src.client --model mlp --data bank -m 3 -i 0 -d non-iid
-python -m src.client --model mlp --data bank -m 3 -i 1 -d non-iid
-python -m src.client --model mlp --data bank -m 3 -i 2 -d non-iid
+python3 -m src.client_zkp --model mlp --data bank --data_dir /opt/falcon/src/executor/python/data/bank -m 3 --num_clients 3 -i 0
+python3 -m src.client_zkp --model mlp --data bank --data_dir /opt/falcon/src/executor/python/data/bank -m 3 --num_clients 3 -i 1
+python3 -m src.client_zkp --model mlp --data bank --data_dir /opt/falcon/src/executor/python/data/bank -m 3 --num_clients 3 -i 2
 ```
 
 Finally, the server and clients finish the FL training. 
