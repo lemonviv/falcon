@@ -138,6 +138,9 @@ RUN apt-get update && apt-get upgrade -y && \
         python3-pip \
         libgoogle-glog-dev \
         libgtest-dev \
+        libgmp3-dev \
+        swig \
+        libtbb-dev \
         && \
         pip3 install requests && \
         apt-get clean && \
@@ -176,7 +179,7 @@ RUN echo "update repo for building new image"
 WORKDIR /opt
 RUN echo yes|git clone git@github.com:lemonviv/falcon.git && \
     cd falcon && \
-    git checkout dev  && \
+    git checkout hfl  && \
     cd third_party/ && \
     git submodule update --init --recursive
 
@@ -210,6 +213,20 @@ RUN cd third_party/served && \
     cmake ../ && \
     make && \
     make install
+
+# Install libntl library
+RUN cd /root/temp && \
+    wget https://libntl.org/ntl-11.5.1.tar.gz && \
+    tar -xzvf ntl-11.5.1.tar.gz && \
+    cd ntl-11.5.1/src/ && \
+    ./configure && \
+    make && make check && \
+    make install
+
+# Install risefl library
+WORKDIR /opt/falcon
+RUN cd third_party/risefl && \
+    bash make.sh
 
 # generate protobuf messages
 WORKDIR /opt/falcon
